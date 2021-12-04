@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -40,32 +41,44 @@ type Task interface {
 }
 
 type Monitor struct {
-	Input chan Task
-	tasks []Task
+	tasks   []Task
+	tasksMu sync.Mutex
 }
 
-func NewMonitor(ctx context.Context, taskChanCap int) *Monitor {
-	m := &Monitor{
-		Input: make(chan Task, taskChanCap),
-	}
+func NewMonitor(ctx context.Context) *Monitor {
+	m := &Monitor{}
 
 	go m.Run(ctx)
 
 	return m
 }
 
-func (m *Monitor) Run(ctx context.Context) {
-	for ctx.Err() == nil {
-		select {
-		case task := <-m.Input:
-			m.tasks = append(m.tasks, task)
+func (m *Monitor) AddTask(task Task) {
+	m.tasksMu.Lock()
+	m.tasks = append(m.tasks, task)
+	m.tasksMu.Unlock()
+}
 
-			task.Run(ctx)
-			// TODO: maybe restart if task failed
-			time.Sleep(time.Second)
-		case <-ctx.Done():
-			return
+func (m *Monitor) Run(ctx context.Context) {
+	var taskIdx int
+	var task Task
+
+	for ctx.Err() == nil {
+		m.tasksMu.Lock()
+		if taskIdx == len(m.tasks) {
+			m.tasksMu.Unlock()
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
+
+		task = m.tasks[taskIdx]
+		m.tasksMu.Unlock()
+
+		task.Run(ctx)
+
+		taskIdx++
+		// TODO: maybe restart if task failed
+		time.Sleep(2 * time.Second)
 	}
 }
 

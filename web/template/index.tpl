@@ -19,7 +19,11 @@
     <tr>
         <th scope="row">{{$task.Type}}</th>
         <td>{{$task.Name}}</td>
-        <td><progress max="100" value="{{$task.Progress}}"></progress></td>
+        <td>
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" style="width: {{$task.Progress}}%" aria-valuenow="{{$task.Progress}}" aria-valuemin="0" aria-valuemax="100">{{$task.Progress}}%</div>
+            </div>
+        </td>
         <td>{{$task.Status}}</td>
         <td>{{$task.Details}}</td>
     </tr>

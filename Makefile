@@ -10,6 +10,9 @@ CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tdnet
 CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tdutils
 CGO_CFLAGS += -I/home/eugene/GoProjects/teleporter/td/tdlib/include
 
+# v1.7.9
+TDLIB_COMMIT = 7d41d9eaa58a6e0927806283252dc9e74eda5512
+
 /usr/bin/clang++-13:
 	apt-get update
 	apt-get upgrade
@@ -21,6 +24,8 @@ td: /usr/bin/clang++-13
 
 tdlib: td
 	cd td && \
+	git pull && \
+	git checkout $(TDLIB_COMMIT) && \
 	rm -rf build && \
 	mkdir build && \
 	cd build && \

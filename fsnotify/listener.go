@@ -1,6 +1,7 @@
 package fsnotify
 
 import (
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -8,8 +9,11 @@ import (
 	"strings"
 
 	"github.com/ffenix113/teleporter/manager/arman92"
+	"github.com/ffenix113/teleporter/tasks"
 	"github.com/fsnotify/fsnotify"
 )
+
+const MaxFileSize = 350 * 1024 // 100MB
 
 func NewListener(path string, cl *arman92.Client) {
 	watcher, err := fsnotify.NewWatcher()
@@ -37,6 +41,7 @@ func NewListener(path string, cl *arman92.Client) {
 					stat, err := os.Stat(event.Name)
 					if err != nil {
 						log.Printf("stat new item: %s", err)
+						continue
 					}
 
 					switch stat.IsDir() {
@@ -45,14 +50,30 @@ func NewListener(path string, cl *arman92.Client) {
 							log.Printf("add new dir: %s", err.Error())
 						}
 					default:
-						if stat.Size() != 0 {
-							cl.TaskMonitor.Input <- arman92.NewUploadFile(cl, event.Name)
+						if fileSize := stat.Size(); fileSize != 0 {
+							if kbs := fileSize / 1024; kbs > MaxFileSize {
+								cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+								continue
+							}
+							cl.AddTask(arman92.NewUploadFile(cl, event.Name))
 						}
 					}
 				case IsOp(event.Op, fsnotify.Write):
-					cl.TaskMonitor.Input <- arman92.NewUploadFile(cl, event.Name)
+					stat, err := os.Stat(event.Name)
+					if err != nil {
+						log.Printf("stat new item: %s", err)
+						continue
+					}
+					if fileSize := stat.Size(); fileSize != 0 {
+						if kbs := fileSize / 1024; kbs > MaxFileSize {
+							cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+							continue
+						}
+						cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+					}
+					cl.AddTask(arman92.NewUploadFile(cl, event.Name))
 				case IsOp(event.Op, fsnotify.Remove) || IsOp(event.Op, fsnotify.Rename):
-					cl.TaskMonitor.Input <- arman92.NewDeleteFile(cl, event.Name)
+					cl.AddTask(arman92.NewDeleteFile(cl, event.Name))
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {

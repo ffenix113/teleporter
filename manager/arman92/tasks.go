@@ -2,6 +2,7 @@ package arman92
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Arman92/go-tdlib"
+	"github.com/Arman92/go-tdlib/v2/tdlib"
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/tasks"
-	"gopkg.in/yaml.v3"
 )
+
+// https://core.telegram.org/api/files
+const DownloadFilePartSize = 16 * 1024
 
 type Common struct {
 	Client   *Client
@@ -24,8 +27,14 @@ type Common struct {
 	details  string
 }
 
-func NewCommon(cl *Client, taskType string) *Common {
-	return &Common{Client: cl, taskType: taskType}
+func NewCommon(cl *Client, taskType string, status tasks.TaskStatus, details string) *Common {
+	return &Common{
+		Client:   cl,
+		taskType: taskType,
+		status:   status,
+		details:  details,
+		progress: 100,
+	}
 }
 
 func getCaller() string {
@@ -113,6 +122,11 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		return
 	}
 
+	if err := f.Client.EnsureMessagesAreKnown(ctx, msgID); err != nil {
+		f.SetError(err)
+		return
+	}
+
 	msg, err := f.Client.Client.GetMessage(f.Client.chatID, msgID)
 	if err != nil {
 		f.SetError(err)
@@ -125,15 +139,27 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		return
 	}
 
-	// Maybe would need to update offset and limit on file DL update.
-	file, err := f.Client.Client.DownloadFile(msgDoc.Document.Document.ID, 0, 0, 0, true)
-	if err != nil {
-		f.SetError(err)
-		return
-	}
+	fileID := msgDoc.Document.Document.ID
 
-	for !file.Local.IsDownloadingCompleted {
-		time.Sleep(200 * time.Millisecond)
+	var filePath string
+	if file, err := f.Client.GetFile(fileID); err == nil {
+		if !file.Local.IsDownloadingCompleted {
+			if _, err := f.Client.CancelDownloadFile(fileID, false); err != nil {
+				f.SetError(err)
+				return
+			}
+
+			watcher := f.watchDownload(fileID) // This may dangle if download will screw up.
+			// Download(msgDoc.Document.Document.ID, DownloadFilePartSize)
+			_, err = f.Client.DownloadFile(fileID, 1, 0, 0, false)
+			if err != nil {
+				f.SetError(err)
+				return
+			}
+
+			file = <-watcher
+		}
+		filePath = file.Local.Path
 	}
 
 	if err := os.MkdirAll(path.Dir(f.Client.AbsPath(f.RelativePath)), os.ModeDir); err != nil {
@@ -141,25 +167,78 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		return
 	}
 
-	if err := os.Rename(file.Local.Path, f.Client.AbsPath(f.RelativePath)); err != nil {
+	if err := os.Rename(filePath, f.Client.AbsPath(f.RelativePath)); err != nil {
 		f.SetError(fmt.Errorf("move file: %w", err))
 	}
 
 	f.SetDone()
 }
 
+func (f *DownloadFile) Download(fileID int32, partSize int32) (*tdlib.File, error) {
+	var offset int32
+	var file *tdlib.File
+	var err error
+
+	for {
+		file, err = f.Client.DownloadFile(fileID, 1, offset, partSize, true)
+		if err != nil {
+			return nil, err
+		}
+
+		if file.Local.IsDownloadingCompleted {
+			return file, nil
+		}
+
+		f.progress = int(100 * (file.Local.DownloadedSize / file.ExpectedSize))
+
+		offset += partSize
+	}
+}
+
+func (f *DownloadFile) watchDownload(fileID int32) chan *tdlib.File {
+	watcher := make(chan *tdlib.File, 1)
+	var fileUpdate tdlib.UpdateFile
+
+	f.Client.AddUpdateHandler(func(update tdlib.UpdateMsg) bool {
+		if update.Data["@type"] != string(tdlib.UpdateFileType) {
+			return false
+		}
+
+		json.Unmarshal(update.Raw, &fileUpdate)
+		if fileUpdate.File.ID != fileID {
+			return false
+		}
+
+		if fileUpdate.File.Local.IsDownloadingCompleted {
+			watcher <- fileUpdate.File
+			close(watcher)
+			return true
+		}
+
+		f.progress = int(100 * (float64(fileUpdate.File.Local.DownloadedSize) / float64(fileUpdate.File.ExpectedSize)))
+
+		return false
+	})
+
+	return watcher
+}
+
 type UploadFile struct {
 	*Common
-	RelativePath string
+	RelativePath  string
+	FileUpdatedAt time.Time
 }
 
 func NewUploadFile(cl *Client, filePath string) *UploadFile {
+	stat, _ := os.Stat(filePath)
+
 	return &UploadFile{
 		Common: &Common{
 			Client:   cl,
 			taskType: "UploadFile",
 		},
-		RelativePath: cl.RelativePath(filePath),
+		RelativePath:  cl.RelativePath(filePath),
+		FileUpdatedAt: stat.ModTime(),
 	}
 }
 
@@ -170,33 +249,30 @@ func (f *UploadFile) Name() string {
 func (f *UploadFile) Run(ctx context.Context) {
 	f.status = tasks.TaskStatusInProgress
 
+	f.watchUpload() // This may dangle if upload will screw up.
+
 	if _, ok := f.Client.filesHeader.Files[f.RelativePath]; ok {
 		f.UpdateFile(ctx)
 		return
 	}
 
-	fInfo, err := os.Stat(f.Client.AbsPath(f.RelativePath))
-	if err != nil {
-		f.SetError(err)
-		return
-	}
-
 	fileInfo := manager.File{
 		Path:      f.RelativePath,
-		Size:      fInfo.Size(),
-		UpdatedAt: time.Now(),
-		Encrypted: "",
+		UpdatedAt: f.FileUpdatedAt,
 	}
 
-	d, _ := yaml.Marshal(fileInfo)
+	d, _ := manager.Marshal(fileInfo)
 
-	msg, err := f.Client.Client.SendMessage(f.Client.chatID, 0, 0,
+	// TODO: update path for encrypted file.
+	filePath := f.Client.AbsPath(f.RelativePath)
+
+	msg, err := f.Client.SendMessage(f.Client.chatID, 0, 0,
 		tdlib.NewMessageSendOptions(true, false, nil),
 		nil,
 		tdlib.NewInputMessageDocument(
-			tdlib.NewInputFileLocal(f.Client.AbsPath(f.RelativePath)),
+			tdlib.NewInputFileLocal(filePath),
 			nil,
-			false,
+			true,
 			tdlib.NewFormattedText(string(d), nil),
 		),
 	)
@@ -223,22 +299,15 @@ func (f *UploadFile) UpdateFile(ctx context.Context) {
 		return
 	}
 
-	fInfo, err := os.Stat(f.Client.AbsPath(f.RelativePath))
-	if err != nil {
-		f.SetError(err)
-		return
-	}
-
 	fileInfo := manager.File{
 		Path:      f.RelativePath,
-		Size:      fInfo.Size(),
 		UpdatedAt: time.Now(),
 	}
 	// TODO: add encryption
 
-	d, _ := yaml.Marshal(fileInfo)
+	d, _ := manager.Marshal(fileInfo)
 
-	_, err = f.Client.Client.EditMessageMedia(f.Client.chatID, msgID, nil,
+	_, err := f.Client.Client.EditMessageMedia(f.Client.chatID, msgID, nil,
 		tdlib.NewInputMessageDocument(
 			tdlib.NewInputFileLocal(f.Client.AbsPath(f.RelativePath)),
 			nil,
@@ -252,6 +321,27 @@ func (f *UploadFile) UpdateFile(ctx context.Context) {
 	}
 	// Header does not need to be updated after update of a file.
 	f.SetDone()
+}
+
+func (f *UploadFile) watchUpload() {
+	var updateState tdlib.UpdateFile
+	absFilePath := f.Client.AbsPath(f.RelativePath)
+
+	f.Client.AddUpdateHandler(func(update tdlib.UpdateMsg) bool {
+		if update.Data["@type"] != string(tdlib.UpdateFileType) {
+			return false
+		}
+
+		json.Unmarshal(update.Raw, &updateState)
+
+		if updateState.File.Local.Path != absFilePath {
+			return false
+		}
+
+		f.progress = int(100 * (updateState.File.Remote.UploadedSize / updateState.File.ExpectedSize))
+
+		return updateState.File.Remote.IsUploadingCompleted
+	})
 }
 
 type DeleteFile struct {

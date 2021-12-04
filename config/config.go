@@ -18,6 +18,7 @@ type App struct {
 	ID           int
 	Hash         string
 	FilesPath    string
+	WebListen    string
 	TemplatePath string
 }
 

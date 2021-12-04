@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path"
 
@@ -20,11 +19,9 @@ func main() {
 		panic(err)
 	}
 
-	go web.Listen(":9000", cnf.App.TemplatePath, cl)
+	go web.Listen(cnf.App.WebListen, cnf.App.TemplatePath, cl)
 
-	cl.VerifyLocalFilesExist()
-
-	// cl.TaskMonitor.Input <- arman92.NewUploadFile(cl, "data/test.txt")
+	cl.SynchronizeFiles()
 
 	go func() {
 		cwd, _ := os.Getwd()
@@ -32,18 +29,4 @@ func main() {
 	}()
 
 	select {}
-}
-
-func main2() {
-	conf := config.Load()
-
-	cl, _ := arman92.NewClient(context.Background(), conf)
-
-	// rawUpdates gets all updates comming from tdlib
-	rawUpdates := cl.Client.GetRawUpdatesChannel(100)
-	for update := range rawUpdates {
-		// Show all updates
-		fmt.Println(update.Data)
-		fmt.Print("\n\n")
-	}
 }

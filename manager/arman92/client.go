@@ -2,6 +2,7 @@ package arman92
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,19 +12,24 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/Arman92/go-tdlib"
+	"github.com/Arman92/go-tdlib/v2/client"
+	"github.com/Arman92/go-tdlib/v2/tdlib"
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/tasks"
-	"gopkg.in/yaml.v3"
 )
 
 const Teleporter = "Teleporter"
 
+// UpdateHandler will return true when appropriate update
+// is caught and this handler can be removed.
+type UpdateHandler func(update tdlib.UpdateMsg) bool
+
 type Client struct {
-	Client      *tdlib.Client
+	*client.Client
 	filesHeader manager.PinnedHeader
 	FilesPath   string
 	TaskMonitor *tasks.Monitor
@@ -32,16 +38,19 @@ type Client struct {
 	chatID int64
 	// pinnedHeaderMessageID is the ID of the pinned header.
 	pinnedHeaderMessageID int64
+
+	updateHandlers   []UpdateHandler
+	updateHandlersMu sync.Mutex
 }
 
 // NewClient returns a new client to access Telegram.
 //
 // Context must live for as long as application should live.
 func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
-	tdlib.SetLogVerbosityLevel(2)
+	client.SetLogVerbosityLevel(2)
 
 	// Create new instance of Client
-	client := tdlib.NewClient(tdlib.Config{
+	client := client.NewClient(client.Config{
 		APIID:               strconv.Itoa(cnf.App.ID),
 		APIHash:             cnf.App.Hash,
 		SystemLanguageCode:  "en",
@@ -49,7 +58,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 		SystemVersion:       "1.0.0",
 		ApplicationVersion:  "1.0.0",
 		UseMessageDatabase:  true,
-		UseFileDatabase:     true,
+		UseFileDatabase:     false,
 		UseChatInfoDatabase: true,
 		UseTestDataCenter:   false,
 		DatabaseDirectory:   "./.tdlib/database",
@@ -63,14 +72,16 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 
 	c := &Client{
 		Client:      client,
-		TaskMonitor: tasks.NewMonitor(ctx, 128),
+		TaskMonitor: tasks.NewMonitor(ctx),
 		FilesPath:   cnf.App.FilesPath,
 		filesHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
 	}
 	c.Auth(os.Stdin, os.Stdout)
 
-	// c.rawUpdates = c.Client.GetRawUpdatesChannel(10)
-	// go c.listenRawUpdates()
+	c.rawUpdates = c.Client.GetRawUpdatesChannel(10)
+	c.AddUpdateHandler(VerboseUpdateHandler)
+	c.AddUpdateHandler(c.ListenHeaderMessageUpdates)
+	go c.listenRawUpdates()
 
 	time.Sleep(2 * time.Second)
 
@@ -82,14 +93,86 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 }
 
 func (c *Client) AddTask(tsk tasks.Task) {
-	c.TaskMonitor.Input <- tsk
+	c.TaskMonitor.AddTask(tsk)
+}
+
+func (c *Client) AddUpdateHandler(handler UpdateHandler) {
+	c.updateHandlersMu.Lock()
+	c.updateHandlers = append(c.updateHandlers, handler)
+	c.updateHandlersMu.Unlock()
+}
+
+func VerboseUpdateHandler(update tdlib.UpdateMsg) bool {
+	log.Printf("%s\n\n", update.Raw)
+
+	return false
 }
 
 func (c *Client) listenRawUpdates() {
 	// TODO: This should have custom handlers.
 	for update := range c.rawUpdates {
-		log.Printf("%#v\n\n", update.Data)
+		c.updateHandlersMu.Lock()
+		for i, handler := range c.updateHandlers {
+			if handled := handler(update); handled {
+				c.updateHandlers = append(c.updateHandlers[:i], c.updateHandlers[i+1:]...)
+			}
+		}
+		c.updateHandlersMu.Unlock()
 	}
+}
+
+// SendMessage Sends a message. Returns the sent message
+// @param chatID Target chat
+// @param messageThreadID If not 0, a message thread identifier in which the message will be sent
+// @param replyToMessageID Identifier of the message to reply to or 0
+// @param options Options to be used to send the message
+// @param replyMarkup Markup for replying to the message; for bots only
+// @param inputMessageContent The content of the message to be sent
+func (c *Client) SendMessage(chatID int64, messageThreadID int64, replyToMessageID int64, options *tdlib.MessageSendOptions, replyMarkup tdlib.ReplyMarkup, inputMessageContent tdlib.InputMessageContent) (*tdlib.Message, error) {
+	msg, err := c.Client.SendMessage(chatID, messageThreadID, replyToMessageID, options, replyMarkup, inputMessageContent)
+	if err != nil {
+		return nil, err
+	}
+
+	newID, err := c.waitForMessageSent(msg.ID)
+	if err != nil {
+		return nil, fmt.Errorf("send message: %w", err)
+	}
+
+	msg.ID = newID
+
+	return msg, nil
+}
+
+func (c *Client) waitForMessageSent(msgID int64) (newMsgID int64, err error) {
+	waiter := make(chan struct{})
+	c.AddUpdateHandler(func(update tdlib.UpdateMsg) bool {
+		switch tdlib.UpdateEnum(update.Data["@type"].(string)) {
+		case tdlib.UpdateMessageSendSucceededType:
+			var upd tdlib.UpdateMessageSendSucceeded
+			json.Unmarshal(update.Raw, &upd)
+
+			if upd.OldMessageID != msgID {
+				return false
+			}
+
+			newMsgID = upd.Message.ID
+			close(waiter)
+			return true
+		case tdlib.UpdateMessageSendFailedType:
+			var upd tdlib.UpdateMessageSendFailed
+			json.Unmarshal(update.Raw, &upd)
+
+			err = fmt.Errorf("send failed: code: %d, error: %s", upd.ErrorCode, upd.ErrorMessage)
+			close(waiter)
+			return true
+		}
+
+		return false
+	})
+
+	<-waiter
+	return
 }
 
 func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram) error {
@@ -106,7 +189,7 @@ func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram
 
 	c.pinnedHeaderMessageID = pinnedHeader.ID
 
-	if err := yaml.Unmarshal([]byte(pinnedHeader.Content.(*tdlib.MessageText).Text.Text), &c.filesHeader); err != nil {
+	if err := manager.Unmarshal([]byte(pinnedHeader.Content.(*tdlib.MessageText).Text.Text), &c.filesHeader); err != nil {
 		return fmt.Errorf("unmarshal pinned message text: %w", err)
 	}
 
@@ -115,7 +198,23 @@ func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram
 	return nil
 }
 
-func (c *Client) VerifyLocalFilesExist() {
+func (c *Client) SynchronizeFiles() {
+	c.DownloadRemoteFiles()
+
+	filepath.WalkDir(c.FilesPath, func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			return nil
+		}
+
+		if _, exists := c.filesHeader.Files[c.RelativePath(path)]; !exists {
+			c.AddTask(NewUploadFile(c, path))
+		}
+
+		return nil
+	})
+}
+
+func (c *Client) DownloadRemoteFiles() {
 	for relativeFilePath, msgID := range c.filesHeader.Files {
 		stat, err := os.Stat(c.AbsPath(relativeFilePath))
 		if err != nil {
@@ -134,7 +233,7 @@ func (c *Client) VerifyLocalFilesExist() {
 			continue
 		}
 
-		data, err := c.GetFileDataByID(context.TODO(), msgID)
+		data, err := c.GetFileDataByMsgID(context.TODO(), msgID)
 		if err != nil {
 			c.AddTask(NewStaticTask(relativeFilePath, &Common{
 				taskType: "VerifyLocalFileExist",
@@ -154,18 +253,6 @@ func (c *Client) VerifyLocalFilesExist() {
 			c.AddTask(NewUploadFile(c, relativeFilePath))
 		}
 	}
-
-	filepath.WalkDir(c.FilesPath, func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() {
-			return nil
-		}
-
-		if _, exists := c.filesHeader.Files[c.RelativePath(path)]; !exists {
-			c.AddTask(NewUploadFile(c, path))
-		}
-
-		return nil
-	})
 }
 
 func (c *Client) RelativePath(absPath string) string {

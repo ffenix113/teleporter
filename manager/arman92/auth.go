@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Arman92/go-tdlib"
+	"github.com/Arman92/go-tdlib/v2/tdlib"
 )
 
 // Sentinel questions
@@ -21,7 +21,8 @@ const (
 func (c *Client) Auth(r io.Reader, w io.Writer) {
 	for {
 		currentState, _ := c.Client.Authorize()
-		if currentState.GetAuthorizationStateEnum() == tdlib.AuthorizationStateWaitPhoneNumberType {
+		switch currentState.GetAuthorizationStateEnum() {
+		case tdlib.AuthorizationStateWaitPhoneNumberType:
 			fmt.Fprint(w, PhonePrompt)
 			var number string
 			fmt.Fscanln(r, &number)
@@ -29,7 +30,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			if err != nil {
 				fmt.Printf("Error sending phone number: %v", err)
 			}
-		} else if currentState.GetAuthorizationStateEnum() == tdlib.AuthorizationStateWaitCodeType {
+		case tdlib.AuthorizationStateWaitCodeType:
 			fmt.Fprint(w, CodePrompt)
 			var code string
 			fmt.Fscanln(r, &code)
@@ -37,7 +38,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			if err != nil {
 				fmt.Printf("Error sending auth code : %v", err)
 			}
-		} else if currentState.GetAuthorizationStateEnum() == tdlib.AuthorizationStateWaitPasswordType {
+		case tdlib.AuthorizationStateWaitPasswordType:
 			fmt.Fprint(w, PasswordPrompt)
 			var password string
 			fmt.Fscanln(r, &password)
@@ -45,7 +46,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			if err != nil {
 				fmt.Printf("Error sending auth password: %v", err)
 			}
-		} else if currentState.GetAuthorizationStateEnum() == tdlib.AuthorizationStateReadyType {
+		case tdlib.AuthorizationStateReadyType:
 			break
 		}
 	}
