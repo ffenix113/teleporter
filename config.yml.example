@@ -1,0 +1,8 @@
+app:
+  id: 12345678
+  hash: validAppHash
+  filespath: /some/path/here
+  weblisten: ":9000"
+  templatepath: /source/path/web/template
+telegram:
+  chatname: Group to use
