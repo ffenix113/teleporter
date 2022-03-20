@@ -47,7 +47,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 				fmt.Printf("Error sending auth password: %v", err)
 			}
 		case tdlib.AuthorizationStateReadyType:
-			break
+			return
 		}
 	}
 }

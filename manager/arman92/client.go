@@ -17,6 +17,7 @@ import (
 
 	"github.com/Arman92/go-tdlib/v2/client"
 	"github.com/Arman92/go-tdlib/v2/tdlib"
+
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/tasks"
@@ -41,6 +42,8 @@ type Client struct {
 
 	updateHandlers   []UpdateHandler
 	updateHandlersMu sync.Mutex
+
+	ConnectionState string
 }
 
 // NewClient returns a new client to access Telegram.
@@ -79,11 +82,33 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	c.Auth(os.Stdin, os.Stdout)
 
 	c.rawUpdates = c.Client.GetRawUpdatesChannel(10)
-	c.AddUpdateHandler(VerboseUpdateHandler)
+	// c.AddUpdateHandler(VerboseUpdateHandler)
 	c.AddUpdateHandler(c.ListenHeaderMessageUpdates)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	c.AddUpdateHandler(func() func(update tdlib.UpdateMsg) bool {
+		return func(update tdlib.UpdateMsg) bool {
+			if update.Data["@type"].(string) != string(tdlib.UpdateConnectionStateType) {
+				return false
+			}
+
+			var updateState tdlib.UpdateConnectionState
+			json.Unmarshal(update.Raw, &updateState)
+
+			connectionState := string(updateState.State.GetConnectionStateEnum())
+			c.ConnectionState = strings.TrimPrefix(connectionState, "connectionState")
+			if tdlib.ConnectionStateEnum(connectionState) == tdlib.ConnectionStateReadyType {
+				wg.Done()
+				return true
+			}
+
+			return false
+		}
+	}())
 	go c.listenRawUpdates()
 
-	time.Sleep(2 * time.Second)
+	wg.Wait()
 
 	if err := c.FetchInitInformation(ctx, cnf.Telegram); err != nil {
 		return nil, fmt.Errorf("fetch init: %w", err)
@@ -219,7 +244,7 @@ func (c *Client) DownloadRemoteFiles() {
 		stat, err := os.Stat(c.AbsPath(relativeFilePath))
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				c.AddTask(NewDownloadFile(c, relativeFilePath))
+				c.AddTask(NewDownloadFile(c, relativeFilePath, "file does not exist"))
 				continue
 			}
 
@@ -248,7 +273,7 @@ func (c *Client) DownloadRemoteFiles() {
 
 		switch {
 		case data.UpdatedAt.After(stat.ModTime()):
-			c.AddTask(NewDownloadFile(c, relativeFilePath))
+			c.AddTask(NewDownloadFile(c, relativeFilePath, fmt.Sprintf("%s > %s", data.UpdatedAt.Format(time.RFC3339Nano), stat.ModTime().Format(time.RFC3339Nano))))
 		case data.UpdatedAt.Before(stat.ModTime()):
 			c.AddTask(NewUploadFile(c, relativeFilePath))
 		}

@@ -1,6 +1,6 @@
 module github.com/ffenix113/teleporter
 
-go 1.17
+go 1.18
 
 require (
 	github.com/Arman92/go-tdlib/v2 v2.0.0

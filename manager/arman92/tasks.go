@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
+
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/tasks"
 )
@@ -99,11 +101,12 @@ type DownloadFile struct {
 // NewDownloadFile will return a download file task.
 //
 // filePath can be absolute or relative.
-func NewDownloadFile(cl *Client, filePath string) *DownloadFile {
+func NewDownloadFile(cl *Client, filePath string, details ...string) *DownloadFile {
 	return &DownloadFile{
 		Common: &Common{
 			Client:   cl,
 			taskType: "DownloadFile",
+			details:  detailsOrEmpty(details...),
 		},
 		RelativePath: cl.RelativePath(filePath),
 	}
@@ -167,6 +170,7 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		return
 	}
 
+	log.Printf("from: %s, to: %s\n", filePath, f.Client.AbsPath(f.RelativePath))
 	if err := os.Rename(filePath, f.Client.AbsPath(f.RelativePath)); err != nil {
 		f.SetError(fmt.Errorf("move file: %w", err))
 	}
@@ -435,4 +439,12 @@ func (d *DeleteDir) Run(ctx context.Context) {
 	}
 
 	d.SetDone()
+}
+
+func detailsOrEmpty(strs ...string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+
+	return strs[0]
 }

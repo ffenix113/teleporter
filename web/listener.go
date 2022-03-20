@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/ffenix113/teleporter/manager/arman92"
@@ -8,7 +9,8 @@ import (
 )
 
 func Listen(listenAddr string, templatesPath string, cl *arman92.Client) {
-	http.ListenAndServe(listenAddr, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	err := http.ListenAndServe(listenAddr, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		log.Printf("new request: %s %s", request.Method, request.URL.String())
 		tpls := template.ReadTemplates(templatesPath)
 		tplName := request.RequestURI[1:]
 
@@ -29,4 +31,6 @@ func Listen(listenAddr string, templatesPath string, cl *arman92.Client) {
 			panic(err)
 		}
 	}))
+
+	panic(err)
 }
