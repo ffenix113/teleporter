@@ -15,11 +15,6 @@
         </div>
     </nav>
 
-    <div>
-        Sync'ed file structure:
-        {{template "file_list" MakeTree -1 .client.FilesHeader.FilesTree }}
-    </div>
-
     <table class="table">
     <thead>
     <th>Type</th>

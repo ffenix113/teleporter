@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/ffenix113/teleporter/manager"
 )
 
 //go:embed *.tpl
@@ -26,26 +24,12 @@ func intQuery(query string, def int) (val int) {
 	return val
 }
 
-type FileTree struct {
-	Depth int
-	Tree  manager.Tree
-}
-
 var tplFuncs = map[string]interface{}{
 	"Limit": func(r *http.Request) int {
 		return intQuery(r.URL.Query().Get("limit"), 100)
 	},
 	"Offset": func(r *http.Request) int {
 		return intQuery(r.URL.Query().Get("offset"), 0)
-	},
-	"Mult": func(a, b int) int {
-		return a * b
-	},
-	"MakeTree": func(depth int, tree manager.Tree) FileTree {
-		return FileTree{
-			Depth: depth + 1,
-			Tree:  tree,
-		}
 	},
 }
 

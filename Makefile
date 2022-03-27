@@ -35,3 +35,6 @@ tdlib: td
 
 build:
 	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=clang-13 go build main.go
+
+build_win:
+	GOOS=windows CGO_ENABLED=1 CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS)" CC=x86_64-w64-mingw32-gcc go build main.go

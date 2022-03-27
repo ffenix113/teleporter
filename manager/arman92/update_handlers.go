@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
+
 	"github.com/ffenix113/teleporter/manager"
 )
 
@@ -23,7 +24,7 @@ func (c *Client) ListenHeaderMessageUpdates(update tdlib.UpdateMsg) bool {
 	var upd tdlib.UpdateMessageContent
 	json.Unmarshal(update.Raw, &upd)
 
-	if err := manager.Unmarshal([]byte(upd.NewContent.(*tdlib.MessageText).Text.Text), &c.filesHeader); err != nil {
+	if err := manager.Unmarshal([]byte(upd.NewContent.(*tdlib.MessageText).Text.Text), &c.PinnedHeader); err != nil {
 		log.Println(fmt.Sprintf("unmarshal pinned message text: %s", err.Error()))
 
 		return false

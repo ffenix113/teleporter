@@ -1,0 +1,16 @@
+name: "Linux build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tdlib_version:
+        description: 'Version of tdlib to use'
+        required: true
+        type: string
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Build tdlib
+        run: |
+          

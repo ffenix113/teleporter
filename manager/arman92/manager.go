@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
+
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
 )
@@ -64,7 +65,7 @@ func (c *Client) GetOrInitPinnedMessage(ctx context.Context, chatID int64) (tdli
 }
 
 func (c *Client) CreatePinnedMessage(ctx context.Context, chatID int64) (tdlib.Message, error) {
-	d, _ := manager.Marshal(c.filesHeader)
+	d, _ := manager.Marshal(c.PinnedHeader)
 	data := strings.TrimSpace(string(d))
 
 	m, err := c.SendMessage(chatID, 0, 0,
@@ -90,7 +91,7 @@ func (c *Client) CreatePinnedMessage(ctx context.Context, chatID int64) (tdlib.M
 
 // SendHeader is used to update header in the Telegram chat.
 func (c *Client) SendHeader(ctx context.Context) error {
-	headerBytes, err := manager.Marshal(c.filesHeader)
+	headerBytes, err := manager.Marshal(c.PinnedHeader)
 	if err != nil {
 		return fmt.Errorf("marshal header to yaml: %w", err)
 	}

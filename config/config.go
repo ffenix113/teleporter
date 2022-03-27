@@ -15,6 +15,7 @@ type Config struct {
 
 // App holds Telegram config
 type App struct {
+	Dev          bool
 	ID           int
 	Hash         string
 	FilesPath    string

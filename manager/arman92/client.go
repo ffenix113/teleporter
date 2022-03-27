@@ -31,10 +31,10 @@ type UpdateHandler func(update tdlib.UpdateMsg) bool
 
 type Client struct {
 	*client.Client
-	filesHeader manager.PinnedHeader
-	FilesPath   string
-	TaskMonitor *tasks.Monitor
-	rawUpdates  chan tdlib.UpdateMsg
+	PinnedHeader manager.PinnedHeader
+	FilesPath    string
+	TaskMonitor  *tasks.Monitor
+	rawUpdates   chan tdlib.UpdateMsg
 	// chatID is the chat in which files are stored.
 	chatID int64
 	// pinnedHeaderMessageID is the ID of the pinned header.
@@ -74,10 +74,10 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 
 	c := &Client{
-		Client:      client,
-		TaskMonitor: tasks.NewMonitor(ctx),
-		FilesPath:   cnf.App.FilesPath,
-		filesHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
+		Client:       client,
+		TaskMonitor:  tasks.NewMonitor(ctx),
+		FilesPath:    cnf.App.FilesPath,
+		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
 	}
 	c.Auth(os.Stdin, os.Stdout)
 
@@ -214,7 +214,7 @@ func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram
 
 	c.pinnedHeaderMessageID = pinnedHeader.ID
 
-	if err := manager.Unmarshal([]byte(pinnedHeader.Content.(*tdlib.MessageText).Text.Text), &c.filesHeader); err != nil {
+	if err := manager.Unmarshal([]byte(pinnedHeader.Content.(*tdlib.MessageText).Text.Text), &c.PinnedHeader); err != nil {
 		return fmt.Errorf("unmarshal pinned message text: %w", err)
 	}
 
@@ -231,7 +231,7 @@ func (c *Client) SynchronizeFiles() {
 			return nil
 		}
 
-		if _, exists := c.filesHeader.Files[c.RelativePath(path)]; !exists {
+		if _, exists := c.PinnedHeader.Files[c.RelativePath(path)]; !exists {
 			c.AddTask(NewUploadFile(c, path))
 		}
 
@@ -240,7 +240,7 @@ func (c *Client) SynchronizeFiles() {
 }
 
 func (c *Client) DownloadRemoteFiles() {
-	for relativeFilePath, msgID := range c.filesHeader.Files {
+	for relativeFilePath, msgID := range c.PinnedHeader.Files {
 		stat, err := os.Stat(c.AbsPath(relativeFilePath))
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {

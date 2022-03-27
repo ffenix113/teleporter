@@ -119,7 +119,7 @@ func (f *DownloadFile) Name() string {
 func (f *DownloadFile) Run(ctx context.Context) {
 	f.status = tasks.TaskStatusInProgress
 
-	msgID, ok := f.Client.filesHeader.Files[f.RelativePath]
+	msgID, ok := f.Client.PinnedHeader.Files[f.RelativePath]
 	if !ok {
 		f.SetError(fmt.Errorf("file %q is not present in remote chat", f.RelativePath))
 		return
@@ -255,7 +255,7 @@ func (f *UploadFile) Run(ctx context.Context) {
 
 	f.watchUpload() // This may dangle if upload will screw up.
 
-	if _, ok := f.Client.filesHeader.Files[f.RelativePath]; ok {
+	if _, ok := f.Client.PinnedHeader.Files[f.RelativePath]; ok {
 		f.UpdateFile(ctx)
 		return
 	}
@@ -285,7 +285,7 @@ func (f *UploadFile) Run(ctx context.Context) {
 		return
 	}
 
-	f.Client.filesHeader.Files[f.RelativePath] = msg.ID
+	f.Client.PinnedHeader.Files[f.RelativePath] = msg.ID
 	if err := f.Client.SendHeader(ctx); err != nil {
 		f.SetError(err)
 		return
@@ -297,7 +297,7 @@ func (f *UploadFile) Run(ctx context.Context) {
 func (f *UploadFile) UpdateFile(ctx context.Context) {
 	f.status = tasks.TaskStatusInProgress
 
-	msgID, ok := f.Client.filesHeader.Files[f.RelativePath]
+	msgID, ok := f.Client.PinnedHeader.Files[f.RelativePath]
 	if !ok {
 		f.SetError(fmt.Errorf("file not present in the header: %q", f.RelativePath))
 		return
@@ -370,7 +370,7 @@ func (f *DeleteFile) Name() string {
 func (f *DeleteFile) Run(ctx context.Context) {
 	f.status = tasks.TaskStatusInProgress
 
-	msgID, ok := f.Client.filesHeader.Files[f.RelativePath]
+	msgID, ok := f.Client.PinnedHeader.Files[f.RelativePath]
 	if !ok {
 		f.SetError(fmt.Errorf("file is not present in header: %q", f.RelativePath))
 		return
@@ -384,7 +384,7 @@ func (f *DeleteFile) Run(ctx context.Context) {
 		return
 	}
 
-	delete(f.Client.filesHeader.Files, f.RelativePath)
+	delete(f.Client.PinnedHeader.Files, f.RelativePath)
 	if err := f.Client.SendHeader(ctx); err != nil {
 		f.SetError(err)
 		return
@@ -417,12 +417,12 @@ func (d *DeleteDir) Run(ctx context.Context) {
 	d.status = tasks.TaskStatusInProgress
 
 	var msgsToDelete []int64
-	for filePath, msgID := range d.Client.filesHeader.Files {
+	for filePath, msgID := range d.Client.PinnedHeader.Files {
 		if !strings.HasPrefix(filePath, d.RelativeDirPath) {
 			continue
 		}
 
-		delete(d.Client.filesHeader.Files, filePath)
+		delete(d.Client.PinnedHeader.Files, filePath)
 		msgsToDelete = append(msgsToDelete, msgID)
 	}
 	// Can also be done as a separate tasks to delete provided files

@@ -1,0 +1,28 @@
+name: "Windows build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tdlib_version:
+        description: 'Version of tdlib to use'
+        required: true
+        type: string
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Build tdlib
+        run: |
+          git clone https://github.com/tdlib/td.git
+          cd td
+          git checkout 
+          git clone https://github.com/Microsoft/vcpkg.git
+          cd vcpkg
+          ./bootstrap-vcpkg.bat
+          ./vcpkg.exe install gperf:x64-windows openssl:x64-windows zlib:x64-windows
+          cd ..
+          Remove-Item build -Force -Recurse -ErrorAction SilentlyContinue
+          mkdir build
+          cd build
+          cmake -A x64 -DCMAKE_INSTALL_PREFIX:PATH=../tdlib -DCMAKE_TOOLCHAIN_FILE:FILEPATH=../vcpkg/scripts/buildsystems/vcpkg.cmake ..
+          cmake --build . --target install --config Release
