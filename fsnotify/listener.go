@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/ffenix113/teleporter/manager/arman92"
 	"github.com/ffenix113/teleporter/tasks"
-	"github.com/fsnotify/fsnotify"
 )
 
-const MaxFileSize = 350 * 1024 // 100MB
+const MaxFileSize = 350 * 1024 // 350kb
 
 func NewListener(path string, cl *arman92.Client) {
 	watcher, err := fsnotify.NewWatcher()
@@ -21,6 +23,10 @@ func NewListener(path string, cl *arman92.Client) {
 		log.Fatal(err)
 	}
 	defer watcher.Close()
+
+	processFunc := NewProcessEventFunc(cl, watcher)
+
+	debouncer := NewDebounce(time.Second)
 
 	go func() {
 		for {
@@ -36,45 +42,7 @@ func NewListener(path string, cl *arman92.Client) {
 					continue
 				}
 
-				switch {
-				case IsOp(event.Op, fsnotify.Create):
-					stat, err := os.Stat(event.Name)
-					if err != nil {
-						log.Printf("stat new item: %s", err)
-						continue
-					}
-
-					switch stat.IsDir() {
-					case true:
-						if err := watcher.Add(event.Name); err != nil {
-							log.Printf("add new dir: %s", err.Error())
-						}
-					default:
-						if fileSize := stat.Size(); fileSize != 0 {
-							if kbs := fileSize / 1024; kbs > MaxFileSize {
-								cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
-								continue
-							}
-							cl.AddTask(arman92.NewUploadFile(cl, event.Name))
-						}
-					}
-				case IsOp(event.Op, fsnotify.Write):
-					stat, err := os.Stat(event.Name)
-					if err != nil {
-						log.Printf("stat new item: %s", err)
-						continue
-					}
-					if fileSize := stat.Size(); fileSize != 0 {
-						if kbs := fileSize / 1024; kbs > MaxFileSize {
-							cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
-							continue
-						}
-						cl.AddTask(arman92.NewUploadFile(cl, event.Name))
-					}
-					cl.AddTask(arman92.NewUploadFile(cl, event.Name))
-				case IsOp(event.Op, fsnotify.Remove) || IsOp(event.Op, fsnotify.Rename):
-					cl.AddTask(arman92.NewDeleteFile(cl, event.Name))
-				}
+				debouncer.Add(event, processFunc)
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					return
@@ -88,8 +56,54 @@ func NewListener(path string, cl *arman92.Client) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
-	select {}
+type ProcessEventFunc func(event fsnotify.Event)
+
+func NewProcessEventFunc(cl *arman92.Client, watcher *fsnotify.Watcher) func(fsnotify.Event) {
+	return func(event fsnotify.Event) {
+		log.Printf("op: %s, file: %q\n", event.Op, event.Name)
+
+		switch {
+		case IsOp(event.Op, fsnotify.Create):
+			stat, err := os.Stat(event.Name)
+			if err != nil {
+				log.Printf("stat new item: %s", err)
+				return
+			}
+
+			if stat.IsDir() {
+				if err := watcher.Add(event.Name); err != nil {
+					log.Printf("add new dir: %s", err.Error())
+				}
+				return
+			}
+			if fileSize := stat.Size(); fileSize != 0 {
+				if kbs := fileSize / 1024; kbs > MaxFileSize {
+					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+					return
+				}
+				cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+			}
+		case IsOp(event.Op, fsnotify.Write):
+			stat, err := os.Stat(event.Name)
+			if err != nil {
+				log.Printf("stat new item: %s", err)
+				return
+			}
+			if fileSize := stat.Size(); fileSize != 0 {
+				if kbs := fileSize / 1024; kbs > MaxFileSize {
+					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+					return
+				}
+				cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+				return
+			}
+			cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+		case IsOp(event.Op, fsnotify.Remove) || IsOp(event.Op, fsnotify.Rename):
+			cl.AddTask(arman92.NewDeleteFile(cl, event.Name))
+		}
+	}
 }
 
 func AddRecursively(w *fsnotify.Watcher, dirPath string) error {
