@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -19,12 +20,16 @@ func NewRouter(cl *arman92.Client, templatesPath string) http.Handler {
 	r.Use(CORS)
 
 	r.Get("/files/*", func(w http.ResponseWriter, r *http.Request) {
-		// pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")
-
-		var filesAtPath []manager.File // cl.PinnedHeader.FilesAtPath(pathKey)
-
+		pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")
 		w.Header().Add("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(filesAtPath)
+
+		tree, ok := manager.FindInTree[*manager.Tree](cl.FileTree, pathKey)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		json.NewEncoder(w).Encode(tree.FilesInfo())
 	})
 
 	r.Get("/", func(writer http.ResponseWriter, request *http.Request) {

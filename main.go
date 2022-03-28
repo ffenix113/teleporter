@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
+	"os/signal"
 	"path"
 
 	"github.com/ffenix113/teleporter/config"
@@ -12,6 +14,9 @@ import (
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
 	cnf := config.Load()
 
 	cl, err := arman92.NewClient(context.Background(), cnf)
@@ -23,10 +28,13 @@ func main() {
 
 	cl.SynchronizeFiles()
 
-	go func() {
-		cwd, _ := os.Getwd()
-		fsnotify.NewListener(path.Join(cwd, "data"), cl)
-	}()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer cancel()
 
-	select {}
+	cwd, _ := os.Getwd()
+	listener := fsnotify.NewListener(path.Join(cwd, "data"), cl)
+
+	<-ctx.Done()
+	listener.Close()
+	log.Println("Shutdown", ctx.Err().Error())
 }

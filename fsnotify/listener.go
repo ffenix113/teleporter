@@ -15,27 +15,28 @@ import (
 	"github.com/ffenix113/teleporter/tasks"
 )
 
-const MaxFileSize = 350 * 1024 // 350kb
+const MaxFileSizeInKB = 50 * 1024
 
-func NewListener(path string, cl *arman92.Client) {
+func NewListener(path string, cl *arman92.Client) *fsnotify.Watcher {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer watcher.Close()
 
 	processFunc := NewProcessEventFunc(cl, watcher)
 
-	debouncer := NewDebounce(time.Second)
+	debouncer := NewDebounce(2 * time.Second)
 
 	go func() {
+		defer func() {
+			log.Println("fsnotify listener stopped")
+		}()
 		for {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
 					return
 				}
-				log.Println("event:", event)
 
 				// Do not store cache and temp files.
 				if strings.HasSuffix(event.Name, "~") {
@@ -56,19 +57,19 @@ func NewListener(path string, cl *arman92.Client) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	return watcher
 }
 
 type ProcessEventFunc func(event fsnotify.Event)
 
 func NewProcessEventFunc(cl *arman92.Client, watcher *fsnotify.Watcher) func(fsnotify.Event) {
 	return func(event fsnotify.Event) {
-		log.Printf("op: %s, file: %q\n", event.Op, event.Name)
-
 		switch {
 		case IsOp(event.Op, fsnotify.Create):
 			stat, err := os.Stat(event.Name)
 			if err != nil {
-				log.Printf("stat new item: %s", err)
+				cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("stat file failed: %s", err.Error()))))
 				return
 			}
 
@@ -79,28 +80,29 @@ func NewProcessEventFunc(cl *arman92.Client, watcher *fsnotify.Watcher) func(fsn
 				return
 			}
 			if fileSize := stat.Size(); fileSize != 0 {
-				if kbs := fileSize / 1024; kbs > MaxFileSize {
-					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+				kbs := fileSize / 1024
+				if kbs > MaxFileSizeInKB {
+					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSizeInKB))))
 					return
 				}
-				cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+				cl.AddTask(arman92.NewUploadFile(cl, event.Name, "file created"))
 			}
 		case IsOp(event.Op, fsnotify.Write):
 			stat, err := os.Stat(event.Name)
 			if err != nil {
-				log.Printf("stat new item: %s", err)
+				cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("stat file failed: %s", err.Error()))))
 				return
 			}
 			if fileSize := stat.Size(); fileSize != 0 {
-				if kbs := fileSize / 1024; kbs > MaxFileSize {
-					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSize))))
+				if kbs := fileSize / 1024; kbs > MaxFileSizeInKB {
+					cl.AddTask(arman92.NewStaticTask(event.Name, arman92.NewCommon(nil, "UploadFile", tasks.TaskStatusError, fmt.Sprintf("file is larger than supported: %d > %d KB", kbs, MaxFileSizeInKB))))
 					return
 				}
-				cl.AddTask(arman92.NewUploadFile(cl, event.Name))
+				cl.AddTask(arman92.NewUploadFile(cl, event.Name, "file write"))
 				return
 			}
-			cl.AddTask(arman92.NewUploadFile(cl, event.Name))
 		case IsOp(event.Op, fsnotify.Remove) || IsOp(event.Op, fsnotify.Rename):
+			// Rename will be accompanied by a Create event.
 			cl.AddTask(arman92.NewDeleteFile(cl, event.Name))
 		}
 	}
@@ -109,6 +111,7 @@ func NewProcessEventFunc(cl *arman92.Client, watcher *fsnotify.Watcher) func(fsn
 func AddRecursively(w *fsnotify.Watcher, dirPath string) error {
 	return filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
+			log.Println("add dir:", path)
 			if err := w.Add(path); err != nil {
 				return err
 			}

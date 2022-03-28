@@ -32,6 +32,7 @@ type UpdateHandler func(update tdlib.UpdateMsg) bool
 type Client struct {
 	*client.Client
 	PinnedHeader manager.PinnedHeader
+	FileTree     *manager.Tree
 	FilesPath    string
 	TaskMonitor  *tasks.Monitor
 	rawUpdates   chan tdlib.UpdateMsg
@@ -78,6 +79,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 		TaskMonitor:  tasks.NewMonitor(ctx),
 		FilesPath:    cnf.App.FilesPath,
 		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
+		FileTree:     &manager.Tree{},
 	}
 	c.Auth(os.Stdin, os.Stdout)
 
@@ -220,7 +222,29 @@ func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram
 
 	// TODO: decrypt if header is encrypted. Do in next iteration.
 
+	c.addFilesToTree()
+
 	return nil
+}
+
+func (c *Client) addFilesToTree() {
+	for filePath, msgID := range c.PinnedHeader.Files {
+		data, err := c.GetFileDataByMsgID(context.TODO(), msgID)
+		if err != nil {
+			c.AddTask(NewStaticTask(filePath, &Common{
+				taskType: "FetchData",
+				status:   tasks.TaskStatusError,
+				details:  fmt.Sprintf("get file header: %s", err.Error()),
+			}))
+			continue
+		}
+
+		data.Name = filepath.Base(data.Path)
+
+		c.FileTree.Add(filePath, &manager.Tree{
+			File: &data,
+		})
+	}
 }
 
 func (c *Client) SynchronizeFiles() {
@@ -272,10 +296,10 @@ func (c *Client) DownloadRemoteFiles() {
 		// TODO: decrypt file data
 
 		switch {
-		case data.UpdatedAt.After(stat.ModTime()):
-			c.AddTask(NewDownloadFile(c, relativeFilePath, fmt.Sprintf("%s > %s", data.UpdatedAt.Format(time.RFC3339Nano), stat.ModTime().Format(time.RFC3339Nano))))
-		case data.UpdatedAt.Before(stat.ModTime()):
-			c.AddTask(NewUploadFile(c, relativeFilePath))
+		case data.FileUpdatedAt.After(stat.ModTime()):
+			c.AddTask(NewDownloadFile(c, relativeFilePath, fmt.Sprintf("%s > %s", data.FileUpdatedAt.Format(time.RFC3339Nano), stat.ModTime().Format(time.RFC3339Nano))))
+		case data.FileUpdatedAt.Before(stat.ModTime()):
+			c.AddTask(NewUploadFile(c, c.AbsPath(relativeFilePath)))
 		}
 	}
 }

@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -165,12 +165,11 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		filePath = file.Local.Path
 	}
 
-	if err := os.MkdirAll(path.Dir(f.Client.AbsPath(f.RelativePath)), os.ModeDir); err != nil {
+	if err := os.MkdirAll(path.Dir(f.Client.AbsPath(f.RelativePath)), os.ModeDir|0755); err != nil {
 		f.SetError(err)
 		return
 	}
 
-	log.Printf("from: %s, to: %s\n", filePath, f.Client.AbsPath(f.RelativePath))
 	if err := os.Rename(filePath, f.Client.AbsPath(f.RelativePath)); err != nil {
 		f.SetError(fmt.Errorf("move file: %w", err))
 	}
@@ -233,13 +232,14 @@ type UploadFile struct {
 	FileUpdatedAt time.Time
 }
 
-func NewUploadFile(cl *Client, filePath string) *UploadFile {
+func NewUploadFile(cl *Client, filePath string, description ...string) *UploadFile {
 	stat, _ := os.Stat(filePath)
 
 	return &UploadFile{
 		Common: &Common{
 			Client:   cl,
 			taskType: "UploadFile",
+			details:  detailsOrEmpty(description...),
 		},
 		RelativePath:  cl.RelativePath(filePath),
 		FileUpdatedAt: stat.ModTime(),
@@ -260,15 +260,19 @@ func (f *UploadFile) Run(ctx context.Context) {
 		return
 	}
 
+	// TODO: update path for encrypted file.
+	filePath := f.Client.AbsPath(f.RelativePath)
+	stat, _ := os.Stat(filePath)
+	// TODO: extract file creation and add encryption data there
 	fileInfo := manager.File{
-		Path:      f.RelativePath,
-		UpdatedAt: f.FileUpdatedAt,
+		Name:          filepath.Base(f.RelativePath),
+		Path:          f.RelativePath,
+		Size:          stat.Size(),
+		UploadedAt:    time.Now(),
+		FileUpdatedAt: stat.ModTime(),
 	}
 
 	d, _ := manager.Marshal(fileInfo)
-
-	// TODO: update path for encrypted file.
-	filePath := f.Client.AbsPath(f.RelativePath)
 
 	msg, err := f.Client.SendMessage(f.Client.chatID, 0, 0,
 		tdlib.NewMessageSendOptions(true, false, nil),
@@ -286,6 +290,7 @@ func (f *UploadFile) Run(ctx context.Context) {
 	}
 
 	f.Client.PinnedHeader.Files[f.RelativePath] = msg.ID
+	f.Client.FileTree.Add(f.RelativePath, &manager.Tree{File: &fileInfo})
 	if err := f.Client.SendHeader(ctx); err != nil {
 		f.SetError(err)
 		return
@@ -303,17 +308,19 @@ func (f *UploadFile) UpdateFile(ctx context.Context) {
 		return
 	}
 
-	fileInfo := manager.File{
-		Path:      f.RelativePath,
-		UpdatedAt: time.Now(),
-	}
+	file, _ := manager.FindInTree[*manager.File](f.Client.FileTree, f.RelativePath)
+
+	filePath := f.Client.AbsPath(f.RelativePath)
+	stat, _ := os.Stat(filePath)
+	file.Size = stat.Size()
+	file.FileUpdatedAt = stat.ModTime()
 	// TODO: add encryption
 
-	d, _ := manager.Marshal(fileInfo)
+	d, _ := manager.Marshal(file)
 
 	_, err := f.Client.Client.EditMessageMedia(f.Client.chatID, msgID, nil,
 		tdlib.NewInputMessageDocument(
-			tdlib.NewInputFileLocal(f.Client.AbsPath(f.RelativePath)),
+			tdlib.NewInputFileLocal(filePath),
 			nil,
 			false,
 			tdlib.NewFormattedText(string(d), nil),
@@ -336,7 +343,9 @@ func (f *UploadFile) watchUpload() {
 			return false
 		}
 
-		json.Unmarshal(update.Raw, &updateState)
+		if err := json.Unmarshal(update.Raw, &updateState); err != nil {
+			f.SetError(err)
+		}
 
 		if updateState.File.Local.Path != absFilePath {
 			return false
@@ -385,6 +394,7 @@ func (f *DeleteFile) Run(ctx context.Context) {
 	}
 
 	delete(f.Client.PinnedHeader.Files, f.RelativePath)
+	f.Client.FileTree.Delete(f.RelativePath)
 	if err := f.Client.SendHeader(ctx); err != nil {
 		f.SetError(err)
 		return
@@ -433,6 +443,7 @@ func (d *DeleteDir) Run(ctx context.Context) {
 		return
 	}
 
+	d.Client.FileTree.Delete(d.RelativeDirPath)
 	if err := d.Client.SendHeader(ctx); err != nil {
 		d.SetError(err)
 		return

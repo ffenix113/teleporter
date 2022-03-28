@@ -6,8 +6,13 @@ import (
 )
 
 type File struct {
-	Path      string
-	UpdatedAt time.Time
+	Name          string    `json:",omitempty"`
+	Path          string    `json:",omitempty"`
+	Size          int64     `json:",omitempty"`
+	UploadedAt    time.Time `json:",omitempty"`
+	FileUpdatedAt time.Time `json:",omitempty"`
+
+	IsDir bool `json:",omitempty"`
 	// Encrypted is a base64 of encrypted fields above.
 	Encrypted string `json:",omitempty"`
 }
