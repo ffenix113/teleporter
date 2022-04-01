@@ -2,6 +2,8 @@ package manager
 
 import (
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 type Tree struct {
@@ -36,6 +38,14 @@ func (t Tree) FilesInfo() []*File {
 			})
 		}
 	}
+
+	slices.SortFunc(infos, func(a, b *File) bool {
+		if a.IsDir && !b.IsDir || !a.IsDir && b.IsDir {
+			return a.IsDir
+		}
+
+		return a.Path < b.Path
+	})
 
 	return infos
 }
@@ -104,7 +114,7 @@ func FindInTree[T searchable](t *Tree, path string) (T, bool) {
 	}
 
 	for _, part := range parts {
-		if found.Tree == nil {
+		if found == nil || found.Tree == nil {
 			return res, false
 		}
 

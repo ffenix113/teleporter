@@ -110,8 +110,11 @@ func NewProcessEventFunc(cl *arman92.Client, watcher *fsnotify.Watcher) func(fsn
 
 func AddRecursively(w *fsnotify.Watcher, dirPath string) error {
 	return filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("add listen dir: %w", err)
+		}
+
 		if d.IsDir() {
-			log.Println("add dir:", path)
 			if err := w.Add(path); err != nil {
 				return err
 			}

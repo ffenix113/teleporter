@@ -2,39 +2,42 @@
 
 CGO_LDFLAGS += -lcrypto
 CGO_LDFLAGS += -L/usr/lib/x86_64-linux-gnu
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tddb
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tdactor
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/sqlite
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tdnet
-CGO_LDFLAGS += -L/home/eugene/GoProjects/teleporter/td/build/tdutils
-CGO_CFLAGS += -I/home/eugene/GoProjects/teleporter/td/tdlib/include
+CGO_LDFLAGS += -L$(PWD)/td/build
+CGO_LDFLAGS += -L$(PWD)/td/build/tddb
+CGO_LDFLAGS += -L$(PWD)/td/build/tdactor
+CGO_LDFLAGS += -L$(PWD)/td/build/sqlite
+CGO_LDFLAGS += -L$(PWD)/td/build/tdnet
+CGO_LDFLAGS += -L$(PWD)/td/build/tdutils
+CGO_CFLAGS += -I$(PWD)/td/tdlib/include
 
-# v1.7.9
-TDLIB_COMMIT = 7d41d9eaa58a6e0927806283252dc9e74eda5512
+# Can be a commit as well.
+TDLIB_VERSION = v1.8.0
 
-/usr/bin/clang++-13:
+CLANG_VERSION = 13
+CLANG = /usr/bin/clang-$(CLANG_VERSION)
+CLANG_PP = /usr/bin/clang++-$(CLANG_VERSION)
+
+build: tdlib
+	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
+
+$(CLANG_PP):
 	apt-get update
 	apt-get upgrade
-	aptitude install make git zlib1g-dev libssl-dev gperf cmake clang-13 libc++-dev libc++abi-dev llvm-13
+	apt-get install make git zlib1g-dev libssl-dev gperf cmake clang-$(CLANG_VERSION) libc++-dev libc++abi-dev llvm-$(CLANG_VERSION)
 
-td: /usr/bin/clang++-13
+td: $(CLANG_PP)
 	rm -rf td
-	git clone https://github.com/tdlib/td.git
+	git clone https://github.com/tdlib/td.git \
+	git checkout master && git pull && \
+	git checkout $(TDLIB_VERSION)
+
 
 tdlib: td
 	cd td && \
-	git pull && \
-	git checkout $(TDLIB_COMMIT) && \
 	rm -rf build && \
 	mkdir build && \
 	cd build && \
-	CXXFLAGS="-stdlib=libc++" CC=/usr/bin/clang-13 CXX=/usr/bin/clang++-13 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=../tdlib .. && \
+	CXXFLAGS="-stdlib=libc++" CC=$(CLANG) CXX=$(CLANG_PP) cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=../tdlib .. && \
 	cmake --build . --target install -j5 && \
 	make install
 
-build:
-	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=clang-13 go build main.go
-
-build_win:
-	GOOS=windows CGO_ENABLED=1 CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS)" CC=x86_64-w64-mingw32-gcc go build main.go

@@ -17,7 +17,10 @@ func NewRouter(cl *arman92.Client, templatesPath string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
+	r.Use(middleware.Compress(6))
 	r.Use(CORS)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.CleanPath)
 
 	r.Get("/files/*", func(w http.ResponseWriter, r *http.Request) {
 		pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")

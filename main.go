@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path"
 
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/fsnotify"
@@ -31,8 +30,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	cwd, _ := os.Getwd()
-	listener := fsnotify.NewListener(path.Join(cwd, "data"), cl)
+	listener := fsnotify.NewListener(cnf.App.FilesPath, cl)
 
 	<-ctx.Done()
 	listener.Close()

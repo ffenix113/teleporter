@@ -30,8 +30,13 @@ type Telegram struct {
 
 func Load() (c Config) {
 	cwd, _ := os.Getwd()
+	configFile := path.Join(cwd, "config.yml")
 
-	d, err := ioutil.ReadFile(path.Join(cwd, "config.yml"))
+	if envConfigFile := os.Getenv("CONFIG_FILE"); envConfigFile != "" {
+		configFile = envConfigFile
+	}
+
+	d, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		panic(err)
 	}
