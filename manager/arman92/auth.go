@@ -20,13 +20,13 @@ const (
 // Use sentinel prompts to check to what info is required.
 func (c *Client) Auth(r io.Reader, w io.Writer) {
 	for {
-		currentState, _ := c.Client.Authorize()
+		currentState, _ := c.TDClient.Authorize()
 		switch currentState.GetAuthorizationStateEnum() {
 		case tdlib.AuthorizationStateWaitPhoneNumberType:
 			fmt.Fprint(w, PhonePrompt)
 			var number string
 			fmt.Fscanln(r, &number)
-			_, err := c.Client.SendPhoneNumber(number)
+			_, err := c.TDClient.SendPhoneNumber(number)
 			if err != nil {
 				fmt.Printf("Error sending phone number: %v", err)
 			}
@@ -34,7 +34,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			fmt.Fprint(w, CodePrompt)
 			var code string
 			fmt.Fscanln(r, &code)
-			_, err := c.Client.SendAuthCode(code)
+			_, err := c.TDClient.SendAuthCode(code)
 			if err != nil {
 				fmt.Printf("Error sending auth code : %v", err)
 			}
@@ -42,7 +42,7 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			fmt.Fprint(w, PasswordPrompt)
 			var password string
 			fmt.Fscanln(r, &password)
-			_, err := c.Client.SendAuthPassword(password)
+			_, err := c.TDClient.SendAuthPassword(password)
 			if err != nil {
 				fmt.Printf("Error sending auth password: %v", err)
 			}

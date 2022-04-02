@@ -3,7 +3,9 @@ package arman92
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -93,6 +95,26 @@ func (t StaticTask) Name() string {
 
 func (StaticTask) Run(ctx context.Context) {}
 
+type Callback struct {
+	tasks.Task
+	done func(task tasks.Task)
+}
+
+// WithCallback will execute callback when task is done.
+//
+// Note: if task will be restarted - callback will be executed again.
+func WithCallback(task tasks.Task, callback func(task tasks.Task)) Callback {
+	return Callback{
+		Task: task,
+		done: callback,
+	}
+}
+
+func (c Callback) Run(ctx context.Context) {
+	c.Task.Run(ctx)
+	c.done(c.Task)
+}
+
 type DownloadFile struct {
 	*Common
 	RelativePath string
@@ -130,7 +152,7 @@ func (f *DownloadFile) Run(ctx context.Context) {
 		return
 	}
 
-	msg, err := f.Client.Client.GetMessage(f.Client.chatID, msgID)
+	msg, err := f.Client.TDClient.GetMessage(f.Client.chatID, msgID)
 	if err != nil {
 		f.SetError(err)
 		return
@@ -145,16 +167,16 @@ func (f *DownloadFile) Run(ctx context.Context) {
 	fileID := msgDoc.Document.Document.ID
 
 	var filePath string
-	if file, err := f.Client.GetFile(fileID); err == nil {
+	if file, err := f.Client.TDClient.GetFile(fileID); err == nil {
 		if !file.Local.IsDownloadingCompleted {
-			if _, err := f.Client.CancelDownloadFile(fileID, false); err != nil {
+			if _, err := f.Client.TDClient.CancelDownloadFile(fileID, false); err != nil {
 				f.SetError(err)
 				return
 			}
 
 			watcher := f.watchDownload(fileID) // This may dangle if download will screw up.
 			// Download(msgDoc.Document.Document.ID, DownloadFilePartSize)
-			_, err = f.Client.DownloadFile(fileID, 1, 0, 0, false)
+			_, err = f.Client.TDClient.DownloadFile(fileID, 1, 0, 0, false)
 			if err != nil {
 				f.SetError(err)
 				return
@@ -183,7 +205,7 @@ func (f *DownloadFile) Download(fileID int32, partSize int32) (*tdlib.File, erro
 	var err error
 
 	for {
-		file, err = f.Client.DownloadFile(fileID, 1, offset, partSize, true)
+		file, err = f.Client.TDClient.DownloadFile(fileID, 1, offset, partSize, true)
 		if err != nil {
 			return nil, err
 		}
@@ -318,7 +340,7 @@ func (f *UploadFile) UpdateFile(ctx context.Context) {
 
 	d, _ := manager.Marshal(file)
 
-	_, err := f.Client.Client.EditMessageMedia(f.Client.chatID, msgID, nil,
+	_, err := f.Client.TDClient.EditMessageMedia(f.Client.chatID, msgID, nil,
 		tdlib.NewInputMessageDocument(
 			tdlib.NewInputFileLocal(filePath),
 			nil,
@@ -384,10 +406,21 @@ func (f *DeleteFile) Run(ctx context.Context) {
 		f.SetError(fmt.Errorf("file is not present in header: %q", f.RelativePath))
 		return
 	}
+
+	// Remove physical file fist so if this fails - we will be able to re-fetch file later.
+	absFilePath := f.Client.AbsPath(f.RelativePath)
+	_, err := os.Stat(absFilePath)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(absFilePath); err != nil {
+			f.SetError(err)
+			return
+		}
+	}
+
 	// It is safer to have deleted file and entry left in header
 	// than the other way around. If header entry will be missing for a file
 	// files will be leaking.
-	_, err := f.Client.Client.DeleteMessages(f.Client.chatID, []int64{msgID}, true)
+	_, err = f.Client.TDClient.DeleteMessages(f.Client.chatID, []int64{msgID}, true)
 	if err != nil {
 		f.SetError(err)
 		return
@@ -437,7 +470,7 @@ func (d *DeleteDir) Run(ctx context.Context) {
 	}
 	// Can also be done as a separate tasks to delete provided files
 	// by using DeleteFile.
-	_, err := d.Client.Client.DeleteMessages(d.Client.chatID, msgsToDelete, true)
+	_, err := d.Client.TDClient.DeleteMessages(d.Client.chatID, msgsToDelete, true)
 	if err != nil {
 		d.SetError(err)
 		return

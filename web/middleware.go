@@ -33,3 +33,19 @@ func IPWhitelist(ips []string) Middleware {
 		})
 	}
 }
+
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Add("Access-Control-Allow-Origin", "*")
+
+		if request.Method == "OPTIONS" {
+			writer.Header().Add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+			writer.WriteHeader(http.StatusOK)
+			return
+		}
+
+		writer.Header().Add("Content-Type", "application/json")
+
+		next.ServeHTTP(writer, request)
+	})
+}

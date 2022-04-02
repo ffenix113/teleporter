@@ -9,13 +9,14 @@ import (
 
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
+	"github.com/ffenix113/teleporter/tasks"
 )
 
 const header = `"Header": "Teleporter"`
 
 func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Chat, error) {
 	if tConf.ChatName != "" {
-		chats, err := c.Client.SearchChatsOnServer(tConf.ChatName, 2)
+		chats, err := c.TDClient.SearchChatsOnServer(tConf.ChatName, 2)
 		if err != nil {
 			return nil, fmt.Errorf("search chat: %w", err)
 		}
@@ -27,7 +28,7 @@ func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Ch
 		tConf.ChatID = chats.ChatIDs[0]
 	}
 
-	chat, err := c.Client.GetChat(tConf.ChatID)
+	chat, err := c.TDClient.GetChat(tConf.ChatID)
 	if err != nil {
 		return nil, fmt.Errorf("get chat: %w", err)
 	}
@@ -36,7 +37,7 @@ func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Ch
 }
 
 func (c *Client) GetOrInitPinnedMessage(ctx context.Context, chatID int64) (tdlib.Message, error) {
-	msg, err := c.Client.SearchChatMessages(
+	msg, err := c.TDClient.SearchChatMessages(
 		c.chatID,
 		header, // Constant
 		nil,
@@ -76,12 +77,12 @@ func (c *Client) CreatePinnedMessage(ctx context.Context, chatID int64) (tdlib.M
 		return tdlib.Message{}, fmt.Errorf("send message: %w", err)
 	}
 
-	m, err = c.Client.GetMessage(chatID, m.ID)
+	m, err = c.TDClient.GetMessage(chatID, m.ID)
 	if err != nil {
 		return tdlib.Message{}, fmt.Errorf("find new header message: %w", err)
 	}
 
-	_, err = c.Client.PinChatMessage(m.ChatID, m.ID, true, false)
+	_, err = c.TDClient.PinChatMessage(m.ChatID, m.ID, true, false)
 	if err != nil {
 		return tdlib.Message{}, fmt.Errorf("pin message: %w", err)
 	}
@@ -98,7 +99,7 @@ func (c *Client) SendHeader(ctx context.Context) error {
 
 	msgText := tdlib.NewInputMessageText(tdlib.NewFormattedText(string(headerBytes), nil), true, false)
 
-	_, err = c.Client.EditMessageText(c.chatID, c.pinnedHeaderMessageID, nil, msgText)
+	_, err = c.TDClient.EditMessageText(c.chatID, c.pinnedHeaderMessageID, nil, msgText)
 	if err != nil {
 		return fmt.Errorf("edit header message text: %w", err)
 	}
@@ -108,9 +109,9 @@ func (c *Client) SendHeader(ctx context.Context) error {
 
 func (c *Client) EnsureMessagesAreKnown(ctx context.Context, ids ...int64) error {
 	for _, msgId := range ids {
-		_, err := c.Client.GetChatHistory(c.chatID, msgId, 0, 1, true)
+		_, err := c.TDClient.GetChatHistory(c.chatID, msgId, 0, 1, true)
 		if err != nil {
-			_, err = c.Client.GetChatHistory(c.chatID, msgId, 0, 1, false)
+			_, err = c.TDClient.GetChatHistory(c.chatID, msgId, 0, 1, false)
 			if err != nil {
 				return fmt.Errorf("ensure message online: %w", err)
 			}
@@ -124,7 +125,7 @@ func (c *Client) GetFileDataByMsgID(ctx context.Context, msgID int64) (manager.F
 	if err := c.EnsureMessagesAreKnown(ctx, msgID); err != nil {
 		return manager.File{}, fmt.Errorf("ensure message exists: %w", err)
 	}
-	msg, err := c.Client.GetMessage(c.chatID, msgID)
+	msg, err := c.TDClient.GetMessage(c.chatID, msgID)
 	if err != nil {
 		return manager.File{}, fmt.Errorf("get message: %w", err)
 	}
@@ -141,4 +142,21 @@ func (c *Client) GetFileDataByMsgID(ctx context.Context, msgID int64) (manager.F
 	// TODO: decrypt data.
 
 	return fileHeader, nil
+}
+
+func (c *Client) DeletePath(ctx context.Context, deletePath string) error {
+	if _, ok := c.PinnedHeader.Files[deletePath]; !ok {
+		return fmt.Errorf("file %s not found or is a directory", deletePath)
+	}
+
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	c.AddTask(WithCallback(NewDeleteFile(c, deletePath), func(_ tasks.Task) {
+		cancel()
+	}))
+
+	<-subCtx.Done()
+
+	return nil
 }

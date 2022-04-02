@@ -30,7 +30,7 @@ const Teleporter = "Teleporter"
 type UpdateHandler func(update tdlib.UpdateMsg) bool
 
 type Client struct {
-	*client.Client
+	TDClient     *client.Client
 	PinnedHeader manager.PinnedHeader
 	FileTree     *manager.Tree
 	FilesPath    string
@@ -53,7 +53,7 @@ type Client struct {
 func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	client.SetLogVerbosityLevel(2)
 
-	// Create new instance of Client
+	// Create new instance of TDClient
 	client := client.NewClient(client.Config{
 		APIID:               strconv.Itoa(cnf.App.ID),
 		APIHash:             cnf.App.Hash,
@@ -75,7 +75,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 
 	c := &Client{
-		Client:       client,
+		TDClient:     client,
 		TaskMonitor:  tasks.NewMonitor(ctx),
 		FilesPath:    cnf.App.FilesPath,
 		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
@@ -83,7 +83,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 	c.Auth(os.Stdin, os.Stdout)
 
-	c.rawUpdates = c.Client.GetRawUpdatesChannel(10)
+	c.rawUpdates = c.TDClient.GetRawUpdatesChannel(10)
 	// c.AddUpdateHandler(VerboseUpdateHandler)
 	c.AddUpdateHandler(c.ListenHeaderMessageUpdates)
 
@@ -156,7 +156,7 @@ func (c *Client) listenRawUpdates() {
 // @param replyMarkup Markup for replying to the message; for bots only
 // @param inputMessageContent The content of the message to be sent
 func (c *Client) SendMessage(chatID int64, messageThreadID int64, replyToMessageID int64, options *tdlib.MessageSendOptions, replyMarkup tdlib.ReplyMarkup, inputMessageContent tdlib.InputMessageContent) (*tdlib.Message, error) {
-	msg, err := c.Client.SendMessage(chatID, messageThreadID, replyToMessageID, options, replyMarkup, inputMessageContent)
+	msg, err := c.TDClient.SendMessage(chatID, messageThreadID, replyToMessageID, options, replyMarkup, inputMessageContent)
 	if err != nil {
 		return nil, err
 	}
