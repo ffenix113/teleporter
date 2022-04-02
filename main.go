@@ -23,7 +23,7 @@ func main() {
 		panic(err)
 	}
 
-	go web.Listen(cnf.App.WebListen, cnf.App.TemplatePath, cl)
+	go web.Listen(cnf, cnf.App.WebListen, cnf.App.TemplatePath, cl)
 
 	cl.SynchronizeFiles()
 

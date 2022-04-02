@@ -21,6 +21,7 @@ type App struct {
 	FilesPath    string
 	WebListen    string
 	TemplatePath string
+	IPWhitelist  []string
 }
 
 type Telegram struct {

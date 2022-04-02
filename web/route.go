@@ -8,19 +8,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/manager/arman92"
 	"github.com/ffenix113/teleporter/web/template"
 )
 
-func NewRouter(cl *arman92.Client, templatesPath string) http.Handler {
+type Middleware func(http.Handler) http.Handler
+
+func NewRouter(conf config.Config, cl *arman92.Client, templatesPath string) http.Handler {
 	r := chi.NewRouter()
 
+	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Compress(6))
 	r.Use(CORS)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.CleanPath)
+	r.Use(IPWhitelist(conf.App.IPWhitelist))
 
 	r.Get("/files/*", func(w http.ResponseWriter, r *http.Request) {
 		pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")
