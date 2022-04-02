@@ -1,0 +1,14 @@
+FROM golang:1.18-bullseye as builder
+ARG CLANG_VERSION=13
+ARG TDLIB_VERSION=1.8.0
+
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y lsb-release wget software-properties-common &&  \
+    wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh $CLANG_VERSION
+RUN apt-get install -y libc++-13-dev libssl-dev gperf cmake libc++abi-${CLANG_VERSION}-dev zlib1g-dev
+COPY ./td /src/td
+COPY Makefile /src/Makefile
+RUN make tdlib TDLIB_VERSION=${TDLIB_VERSION} CLANG_VERSION=${CLANG_VERSION}

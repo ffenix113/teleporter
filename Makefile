@@ -17,7 +17,7 @@ CLANG_VERSION = 13
 CLANG = /usr/bin/clang-$(CLANG_VERSION)
 CLANG_PP = /usr/bin/clang++-$(CLANG_VERSION)
 
-build: tdlib
+build: $(CLANG_PP)
 	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
 
 $(CLANG_PP):
