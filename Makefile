@@ -1,5 +1,9 @@
 .PHONY: tdlib build
 
+# For building service for other architectures
+GOOS = linux
+GOARCH = amd64
+
 CGO_LDFLAGS += -lcrypto
 CGO_LDFLAGS += -L/usr/lib/x86_64-linux-gnu
 CGO_LDFLAGS += -L$(PWD)/td/build
@@ -18,7 +22,7 @@ CLANG = /usr/bin/clang-$(CLANG_VERSION)
 CLANG_PP = /usr/bin/clang++-$(CLANG_VERSION)
 
 build: $(CLANG_PP)
-	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
 
 $(CLANG_PP):
 	apt-get update

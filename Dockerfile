@@ -3,6 +3,16 @@ WORKDIR /src
 
 COPY . /src
 
-RUN make build
+ARG GOOS=linux
+ARG GOARCH=amd64
 
-ENTRYPOINT ["/src/main"]
+RUN make build GOOS=$GOOS GOARCH=$GOARCH
+
+FROM debian:bullseye-slim
+
+RUN apt-get update && apt-get install -y libssl1.1 libc++-13
+
+COPY --from=base /src/main /src/server
+COPY --from=base /src/td/tdlib /src/td/tdlib
+
+ENTRYPOINT ["/src/server"]
