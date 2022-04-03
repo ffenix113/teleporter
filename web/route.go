@@ -29,9 +29,10 @@ func NewRouter(conf config.Config, cl *arman92.Client, templatesPath string) htt
 
 	h := handler.NewHandler(cl)
 
-	r.Get("/files/list", h.FileList) // Route to match '/files/list/'
-	r.Get("/files/list/*", h.FileList)
-	r.Delete("/files/delete/*", h.PathDelete)
+	r.Get("/files/list", handler.Wrap(h.FileList)) // Route to match '/files/list/'
+	r.Get("/files/list/*", handler.Wrap(h.FileList))
+	r.Get("/files/download/*", h.FileDownload)
+	r.Delete("/files/delete/*", handler.Wrap(h.PathDelete))
 	// This is route to show tasks.
 	// Better would be to use Vue instead.
 	r.Get("/", func(writer http.ResponseWriter, request *http.Request) {

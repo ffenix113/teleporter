@@ -44,7 +44,9 @@ func CORS(next http.Handler) http.Handler {
 			return
 		}
 
-		writer.Header().Add("Content-Type", "application/json")
+		if writer.Header().Get("Content-Type") == "" {
+			writer.Header().Add("Content-Type", "application/json")
+		}
 
 		next.ServeHTTP(writer, request)
 	})

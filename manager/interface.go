@@ -6,8 +6,12 @@ import (
 )
 
 type File struct {
-	Name          string    `json:",omitempty"`
-	Path          string    `json:",omitempty"`
+	// Name specifies name of the file or directory
+	Name string `json:",omitempty"`
+	// Path specifies where current file or directory is located
+	// For root directory, path is empty string.
+	Path string `json:",omitempty"`
+	// Size specifies size of the file.
 	Size          int64     `json:",omitempty"`
 	UploadedAt    time.Time `json:",omitempty"`
 	FileUpdatedAt time.Time `json:",omitempty"`

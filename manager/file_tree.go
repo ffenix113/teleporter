@@ -7,8 +7,9 @@ import (
 )
 
 type Tree struct {
-	File *File
-	Tree TreeRoot
+	File   *File
+	Tree   TreeRoot
+	Parent *Tree
 }
 
 type TreeRoot map[string]*Tree
@@ -64,7 +65,9 @@ func (t *Tree) Add(path string, tree *Tree) {
 		}
 
 		if _, ok := head.Tree[part]; !ok {
-			head.Tree[part] = &Tree{}
+			head.Tree[part] = &Tree{
+				Parent: head,
+			}
 		}
 
 		head = head.Tree[part]
@@ -73,6 +76,8 @@ func (t *Tree) Add(path string, tree *Tree) {
 	if head.Tree == nil {
 		head.Tree = TreeRoot{}
 	}
+
+	tree.Parent = head
 
 	head.Tree[parts[len(parts)-1]] = tree
 }
