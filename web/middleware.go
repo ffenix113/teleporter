@@ -7,6 +7,12 @@ import (
 )
 
 func IPWhitelist(ips []string) Middleware {
+	if len(ips) == 0 {
+		return func(h http.Handler) http.Handler {
+			return h
+		}
+	}
+
 	ipMap := make(map[string]struct{}, len(ips))
 	for _, ip := range ips {
 		ipMap[ip] = struct{}{}

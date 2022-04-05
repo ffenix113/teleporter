@@ -4,7 +4,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strconv"
 
+	"github.com/Arman92/go-tdlib/v2/client"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,6 +29,8 @@ type App struct {
 type Telegram struct {
 	ChatName string
 	ChatID   int64
+	LogLevel int `default:"2"`
+	Config   client.Config
 }
 
 func Load() (c Config) {
@@ -42,9 +46,26 @@ func Load() (c Config) {
 		panic(err)
 	}
 
+	c.Telegram.Config = client.Config{
+		SystemLanguageCode:  "en",
+		DeviceModel:         "Server",
+		SystemVersion:       "1.0.0",
+		ApplicationVersion:  "1.0.0",
+		UseMessageDatabase:  true,
+		UseFileDatabase:     false,
+		UseChatInfoDatabase: true,
+		UseTestDataCenter:   false,
+		DatabaseDirectory:   ".tdlib/database",
+		FileDirectory:       ".tdlib/files",
+		IgnoreFileNames:     false,
+	}
+
 	if err := yaml.Unmarshal(d, &c); err != nil {
 		panic(err)
 	}
+
+	c.Telegram.Config.APIID = strconv.Itoa(c.App.ID)
+	c.Telegram.Config.APIHash = c.App.Hash
 
 	return
 }

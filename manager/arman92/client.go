@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,24 +50,10 @@ type Client struct {
 //
 // Context must live for as long as application should live.
 func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
-	client.SetLogVerbosityLevel(2)
+	client.SetLogVerbosityLevel(cnf.Telegram.LogLevel)
 
 	// Create new instance of TDClient
-	client := client.NewClient(client.Config{
-		APIID:               strconv.Itoa(cnf.App.ID),
-		APIHash:             cnf.App.Hash,
-		SystemLanguageCode:  "en",
-		DeviceModel:         "Server",
-		SystemVersion:       "1.0.0",
-		ApplicationVersion:  "1.0.0",
-		UseMessageDatabase:  true,
-		UseFileDatabase:     false,
-		UseChatInfoDatabase: true,
-		UseTestDataCenter:   false,
-		DatabaseDirectory:   "./.tdlib/database",
-		FileDirectory:       "./.tdlib/files",
-		IgnoreFileNames:     false,
-	})
+	client := client.NewClient(cnf.Telegram.Config)
 
 	if !strings.HasSuffix(cnf.App.FilesPath, "/") {
 		cnf.App.FilesPath += "/"
@@ -81,6 +66,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
 		FileTree:     &manager.Tree{},
 	}
+	log.Println("authenticating")
 	c.Auth(os.Stdin, os.Stdout)
 
 	c.rawUpdates = c.TDClient.GetRawUpdatesChannel(10)
@@ -89,6 +75,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
+	log.Println("waiting for ready state")
 	c.AddUpdateHandler(func() func(update tdlib.UpdateMsg) bool {
 		return func(update tdlib.UpdateMsg) bool {
 			if update.Data["@type"].(string) != string(tdlib.UpdateConnectionStateType) {
@@ -101,6 +88,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 			connectionState := string(updateState.State.GetConnectionStateEnum())
 			c.ConnectionState = strings.TrimPrefix(connectionState, "connectionState")
 			if tdlib.ConnectionStateEnum(connectionState) == tdlib.ConnectionStateReadyType {
+				log.Println("status ready, continuing")
 				wg.Done()
 				return true
 			}
@@ -112,6 +100,7 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 
 	wg.Wait()
 
+	log.Println("fetching init information")
 	if err := c.FetchInitInformation(ctx, cnf.Telegram); err != nil {
 		return nil, fmt.Errorf("fetch init: %w", err)
 	}
@@ -247,10 +236,14 @@ func (c *Client) addFilesToTree() {
 	}
 }
 
-func (c *Client) SynchronizeFiles() {
+func (c *Client) SynchronizeFiles() error {
 	c.DownloadRemoteFiles()
 
-	filepath.WalkDir(c.FilesPath, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(c.FilesPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if d.IsDir() {
 			return nil
 		}
@@ -261,6 +254,12 @@ func (c *Client) SynchronizeFiles() {
 
 		return nil
 	})
+
+	if err != nil {
+		return fmt.Errorf("walk dir: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) DownloadRemoteFiles() {

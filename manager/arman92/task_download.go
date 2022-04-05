@@ -133,13 +133,13 @@ func (f *DownloadFile) watchDownload(fileID int32) chan *tdlib.File {
 			return false
 		}
 
+		f.progress = int(100 * (float64(fileUpdate.File.Local.DownloadedSize) / float64(fileUpdate.File.ExpectedSize)))
+
 		if fileUpdate.File.Local.IsDownloadingCompleted {
 			watcher <- fileUpdate.File
 			close(watcher)
 			return true
 		}
-
-		f.progress = int(100 * (float64(fileUpdate.File.Local.DownloadedSize) / float64(fileUpdate.File.ExpectedSize)))
 
 		return false
 	})

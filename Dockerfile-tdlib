@@ -1,14 +1,28 @@
-FROM golang:1.18-bullseye as builder
-ARG CLANG_VERSION=13
-ARG TDLIB_VERSION=1.8.0
+FROM debian:bullseye-slim as builder
+ARG CLANG_VERSION=11
+ARG TDLIB_VERSION=v1.8.0
+
+ARG C=5
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+# Version should either be empty or '-split'
+ARG VERSION
 
 WORKDIR /src
 
-RUN apt-get update && apt-get install -y lsb-release wget software-properties-common &&  \
-    wget https://apt.llvm.org/llvm.sh && \
-    chmod +x llvm.sh && \
-    ./llvm.sh $CLANG_VERSION
-RUN apt-get install -y libc++-13-dev libssl-dev gperf cmake libc++abi-${CLANG_VERSION}-dev zlib1g-dev
-COPY ./td /src/td
-COPY Makefile /src/Makefile
-RUN make tdlib TDLIB_VERSION=${TDLIB_VERSION} CLANG_VERSION=${CLANG_VERSION}
+#RUN apt-get update && apt-get install -y lsb-release wget software-properties-common &&  \
+#    wget https://apt.llvm.org/llvm.sh && \
+#    chmod +x llvm.sh && \
+#    ./llvm.sh $CLANG_VERSION
+RUN apt-get update && apt-get install -y git php libc++-${CLANG_VERSION}-dev libssl-dev gperf cmake libc++abi-${CLANG_VERSION}-dev zlib1g-dev
+#COPY ./td /src/td
+COPY td_CMakeLists.txt.patch td_CMakeLists.txt.patch
+COPY Makefile Makefile
+RUN make tdlib${VERSION} TDLIB_VERSION=${TDLIB_VERSION} CLANG_VERSION=${CLANG_VERSION} C=${C}
+RUN mv /src/td/tdlib /tmp/tdlib && \
+    mv /src/td/build /tmp/build && \
+    rm -rf /src/td && \
+    mkdir /src/td &&  \
+    mv /tmp/tdlib /src/td/tdlib && \
+    mv /tmp/build /src/td/build
