@@ -22,7 +22,7 @@ func NewRouter(conf config.Config, cl *arman92.Client, templatesPath string) htt
 		middleware.Logger,
 		middleware.Compress(6),
 		CORS,
-		middleware.RedirectSlashes,
+		// middleware.RedirectSlashes,
 		middleware.CleanPath,
 		IPWhitelist(conf.App.IPWhitelist),
 	)
@@ -32,7 +32,10 @@ func NewRouter(conf config.Config, cl *arman92.Client, templatesPath string) htt
 	r.Get("/files/list", handler.Wrap(h.FileList)) // Route to match '/files/list/'
 	r.Get("/files/list/*", handler.Wrap(h.FileList))
 	r.Get("/files/download/*", h.FileDownload)
+	r.Delete("/files/delete", handler.Wrap(h.PathDelete))
 	r.Delete("/files/delete/*", handler.Wrap(h.PathDelete))
+	r.Post("/files/upload", handler.Wrap(h.FileUpload))
+	r.Post("/files/upload/*", handler.Wrap(h.FileUpload))
 	// This is route to show tasks.
 	// Better would be to use Vue instead.
 	r.Get("/", func(writer http.ResponseWriter, request *http.Request) {
@@ -49,6 +52,7 @@ func NewRouter(conf config.Config, cl *arman92.Client, templatesPath string) htt
 			return
 		}
 
+		writer.Header().Set("Content-Type", "text/html")
 		if err := tpl.Execute(writer, map[string]interface{}{
 			"request": request,
 			"client":  cl,

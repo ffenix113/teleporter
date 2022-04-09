@@ -14,7 +14,7 @@ import (
 
 func main() {
 	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	log.SetFlags(log.LstdFlags | log.Llongfile | log.Lmicroseconds)
 	log.Println("hello")
 
 	cnf := config.Load()

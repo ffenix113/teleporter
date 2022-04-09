@@ -40,7 +40,11 @@ type Task interface {
 	Details() string
 }
 
+type Hook func(task Task) (Task, bool, error)
+
 type Monitor struct {
+	preAddHook []Hook
+
 	tasks   []Task
 	tasksMu sync.Mutex
 }
@@ -55,8 +59,29 @@ func NewMonitor(ctx context.Context) *Monitor {
 
 func (m *Monitor) AddTask(task Task) {
 	m.tasksMu.Lock()
+	var err error
+	var finished bool
+	for i, h := range m.preAddHook {
+		task, finished, err = h(task)
+		if err != nil {
+			panic(fmt.Errorf("pre-add hook: %w", err))
+		}
+
+		if finished {
+			// FIXME: panics on 'i' here
+			m.preAddHook = append(m.preAddHook[:i], m.preAddHook[i+1:]...)
+		}
+	}
+
 	m.tasks = append(m.tasks, task)
 	m.tasksMu.Unlock()
+}
+
+func (m *Monitor) AddPreAddHook(hook Hook) {
+	m.tasksMu.Lock()
+	defer m.tasksMu.Unlock()
+
+	m.preAddHook = append(m.preAddHook, hook)
 }
 
 func (m *Monitor) Run(ctx context.Context) {

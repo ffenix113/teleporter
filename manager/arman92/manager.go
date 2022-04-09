@@ -144,15 +144,15 @@ func (c *Client) GetFileDataByMsgID(ctx context.Context, msgID int64) (manager.F
 	return fileHeader, nil
 }
 
-func (c *Client) DeletePath(ctx context.Context, deletePath string) error {
-	if _, ok := c.PinnedHeader.Files[deletePath]; !ok {
-		return fmt.Errorf("file %s not found or is a directory", deletePath)
+func (c *Client) DeleteFile(ctx context.Context, filePath string) error {
+	if _, ok := c.PinnedHeader.Files[filePath]; !ok {
+		return fmt.Errorf("file %s not found or is a directory", filePath)
 	}
 
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	c.AddTask(WithCallback(NewDeleteFile(c, deletePath), func(_ tasks.Task) {
+	c.AddTask(WithCallback(NewDeleteFile(c, filePath), func(_ tasks.Task) {
 		cancel()
 	}))
 

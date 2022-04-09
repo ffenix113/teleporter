@@ -34,7 +34,7 @@ func (t Tree) FilesInfo() []*File {
 			infos = append(infos, tree.File)
 		default:
 			infos = append(infos, &File{
-				Path:  path,
+				Name:  path,
 				IsDir: true,
 			})
 		}
@@ -45,7 +45,7 @@ func (t Tree) FilesInfo() []*File {
 			return a.IsDir
 		}
 
-		return a.Path < b.Path
+		return a.Name < b.Name
 	})
 
 	return infos

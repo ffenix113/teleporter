@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -13,9 +16,11 @@ import (
 
 	"github.com/ffenix113/teleporter/manager"
 	"github.com/ffenix113/teleporter/manager/arman92"
+	"github.com/ffenix113/teleporter/tasks"
 )
 
 const MaxDownloadSize = 60 * 1024 * 1024 // 60 MB
+const MaxUploadSize = 10 * 1024 * 1024   // 10 MB
 
 type Handler struct {
 	cl *arman92.Client
@@ -39,11 +44,13 @@ func (h Handler) FileList(_ http.ResponseWriter, r *http.Request) ([]*manager.Fi
 func (h Handler) PathDelete(_ http.ResponseWriter, r *http.Request) (NoResponse, error) {
 	pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")
 
-	if _, ok := manager.FindInTree[*manager.Tree](h.cl.FileTree, pathKey); !ok {
+	v, ok := manager.FindInTree[*manager.Tree](h.cl.FileTree, pathKey)
+	if !ok {
 		return nil, ErrNotFound
 	}
+	_ = v
 
-	if err := h.cl.DeletePath(r.Context(), pathKey); err != nil {
+	if err := h.cl.DeleteFile(r.Context(), pathKey); err != nil {
 		return nil, fmt.Errorf("delete file with path %q error: %w", pathKey, err)
 	}
 
@@ -81,4 +88,60 @@ func (h Handler) FileDownload(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h Handler) FileUpload(w http.ResponseWriter, r *http.Request) (NoResponse, error) {
+	pathKey := strings.TrimSuffix(chi.URLParam(r, "*"), "/")
+
+	if err := r.ParseMultipartForm(MaxUploadSize); err != nil {
+		return nil, fmt.Errorf("parse multipart form error: %w", err)
+	}
+
+	ff, header, err := r.FormFile("file")
+	if err != nil {
+		return nil, fmt.Errorf("get file from form error: %w", err)
+	}
+
+	if header.Size > MaxUploadSize {
+		return nil, fmt.Errorf("file is larger then limit: %d > %d", header.Size, MaxUploadSize)
+	}
+
+	f, err := os.CreateTemp("", "*_"+header.Filename)
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+
+	defer os.RemoveAll(f.Name())
+
+	if n, err := io.Copy(f, ff); err != nil && !errors.Is(err, io.EOF) {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, fmt.Errorf("file is larger then limit: %d(or more) > %d", n, MaxUploadSize)
+		}
+
+		return nil, fmt.Errorf("copy file: %w", err)
+	}
+
+	if err := os.Rename(f.Name(), h.cl.AbsPath(path.Join(pathKey, header.Filename))); err != nil {
+		return nil, fmt.Errorf("move uploaded file to data dir: %w", err)
+	}
+
+	c, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Wait for file upload and wait for its finish
+	h.cl.AddPreAddHook(func(task tasks.Task) (tasks.Task, bool, error) {
+		filePath := path.Join(pathKey, header.Filename)
+
+		uploadTask, isUpload := task.(*arman92.UploadFile)
+		if !isUpload || uploadTask.RelativePath != filePath {
+			return task, false, nil
+		}
+
+		return arman92.WithCallback(task, func(task tasks.Task) {
+			cancel()
+		}), true, nil
+	})
+	<-c.Done()
+
+	return nil, nil
 }

@@ -112,6 +112,10 @@ func (c *Client) AddTask(tsk tasks.Task) {
 	c.TaskMonitor.AddTask(tsk)
 }
 
+func (c *Client) AddPreAddHook(hook tasks.Hook) {
+	c.TaskMonitor.AddPreAddHook(hook)
+}
+
 func (c *Client) AddUpdateHandler(handler UpdateHandler) {
 	c.updateHandlersMu.Lock()
 	c.updateHandlers = append(c.updateHandlers, handler)
@@ -130,6 +134,7 @@ func (c *Client) listenRawUpdates() {
 		c.updateHandlersMu.Lock()
 		for i, handler := range c.updateHandlers {
 			if handled := handler(update); handled {
+				// FIXME: panics on 'i' here
 				c.updateHandlers = append(c.updateHandlers[:i], c.updateHandlers[i+1:]...)
 			}
 		}
