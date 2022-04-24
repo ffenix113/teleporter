@@ -18,9 +18,13 @@ const (
 //
 // Set reader and writer to appropriate values to redirect auth IO.
 // Use sentinel prompts to check to what info is required.
-func (c *Client) Auth(r io.Reader, w io.Writer) {
+func (c *Client) Auth(r io.Reader, w io.Writer) error {
 	for {
-		currentState, _ := c.TDClient.Authorize()
+		currentState, err := c.TDClient.Authorize()
+		if err != nil {
+			return fmt.Errorf("error getting current auth state: %w", err)
+		}
+
 		switch currentState.GetAuthorizationStateEnum() {
 		case tdlib.AuthorizationStateWaitPhoneNumberType:
 			fmt.Fprint(w, PhonePrompt)
@@ -46,8 +50,12 @@ func (c *Client) Auth(r io.Reader, w io.Writer) {
 			if err != nil {
 				fmt.Printf("Error sending auth password: %v", err)
 			}
+		case tdlib.AuthorizationStateWaitTdlibParametersType:
+			panic("probably wrong client parameters in config: client was not able to send parameters")
 		case tdlib.AuthorizationStateReadyType:
-			return
+			return nil
+		default:
+			panic(fmt.Sprintf("unknown returned client auth state: %q", currentState.GetAuthorizationStateEnum()))
 		}
 	}
 }

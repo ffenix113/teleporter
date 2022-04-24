@@ -24,10 +24,12 @@ CLANG_VERSION = 11
 CLANG = /usr/bin/clang-$(CLANG_VERSION)
 CLANG_PP = /usr/bin/clang++-$(CLANG_VERSION)
 
-CMAKE = cmake -j$(C)
-
 build: $(CLANG_PP)
 	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
+
+build-docker:
+	[[ "X$(VERSION)" -eq "X" ]] && (echo "VERSION is not defined"; exit 1;)
+	docker buildx build --platform linux/arm64 -t flayer/teleporter:$(VERSION) -f Dockerfile --push .
 
 $(CLANG_PP):
 	apt-get update

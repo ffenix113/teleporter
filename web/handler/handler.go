@@ -106,7 +106,7 @@ func (h Handler) FileUpload(w http.ResponseWriter, r *http.Request) (NoResponse,
 		return nil, fmt.Errorf("file is larger then limit: %d > %d", header.Size, MaxUploadSize)
 	}
 
-	f, err := os.CreateTemp("", "*_"+header.Filename)
+	f, err := os.CreateTemp(h.cl.TempPath, "*_"+header.Filename)
 	if err != nil {
 		return nil, fmt.Errorf("create temp file: %w", err)
 	}

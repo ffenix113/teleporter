@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"strconv"
 
 	"github.com/Arman92/go-tdlib/v2/client"
 	"gopkg.in/yaml.v3"
@@ -18,9 +17,8 @@ type Config struct {
 // App holds Telegram config
 type App struct {
 	Dev          bool
-	ID           int
-	Hash         string
 	FilesPath    string
+	TempPath     string
 	WebListen    string
 	TemplatePath string
 	IPWhitelist  []string
@@ -63,9 +61,6 @@ func Load() (c Config) {
 	if err := yaml.Unmarshal(d, &c); err != nil {
 		panic(err)
 	}
-
-	c.Telegram.Config.APIID = strconv.Itoa(c.App.ID)
-	c.Telegram.Config.APIHash = c.App.Hash
 
 	return
 }

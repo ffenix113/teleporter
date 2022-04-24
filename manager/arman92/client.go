@@ -44,6 +44,7 @@ type Client struct {
 	updateHandlersMu sync.Mutex
 
 	ConnectionState string
+	TempPath        string
 }
 
 // NewClient returns a new client to access Telegram.
@@ -51,7 +52,6 @@ type Client struct {
 // Context must live for as long as application should live.
 func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	client.SetLogVerbosityLevel(cnf.Telegram.LogLevel)
-
 	// Create new instance of TDClient
 	client := client.NewClient(cnf.Telegram.Config)
 
@@ -63,9 +63,21 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 		TDClient:     client,
 		TaskMonitor:  tasks.NewMonitor(ctx),
 		FilesPath:    cnf.App.FilesPath,
+		TempPath:     cnf.App.TempPath,
 		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
 		FileTree:     &manager.Tree{},
 	}
+
+	if c.TempPath == "" {
+		c.TempPath = c.tempPath()
+	}
+
+	if _, err := os.Stat(c.TempPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(c.TempPath, 0755); err != nil {
+			return nil, fmt.Errorf("create temp files dir: %w", err)
+		}
+	}
+
 	log.Println("authenticating")
 	c.Auth(os.Stdin, os.Stdout)
 
@@ -314,4 +326,8 @@ func (c *Client) RelativePath(absPath string) string {
 
 func (c *Client) AbsPath(relative string) string {
 	return path.Join(c.FilesPath, relative)
+}
+
+func (c *Client) tempPath() string {
+	return path.Join(filepath.Dir(c.FilesPath), ".tmp")
 }
