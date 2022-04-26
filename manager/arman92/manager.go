@@ -9,7 +9,6 @@ import (
 
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
-	"github.com/ffenix113/teleporter/tasks"
 )
 
 const header = `"Header": "Teleporter"`
@@ -144,19 +143,19 @@ func (c *Client) GetFileDataByMsgID(ctx context.Context, msgID int64) (manager.F
 	return fileHeader, nil
 }
 
-func (c *Client) DeleteFile(ctx context.Context, filePath string) error {
-	if _, ok := c.PinnedHeader.Files[filePath]; !ok {
-		return fmt.Errorf("file %s not found or is a directory", filePath)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	c.AddTask(WithCallback(NewDeleteFile(c, filePath), func(_ tasks.Task) {
-		cancel()
-	}))
-
-	<-subCtx.Done()
-
-	return nil
-}
+// func (c *Client) DeleteFile(ctx context.Context, filePath string) error {
+// 	if _, ok := c.PinnedHeader.Files[filePath]; !ok {
+// 		return fmt.Errorf("file %s not found or is a directory", filePath)
+// 	}
+//
+// 	subCtx, cancel := context.WithCancel(ctx)
+// 	defer cancel()
+//
+// 	c.AddTask(WithCallback(NewDeleteFile(c, filePath), func(_ tasks.Task) {
+// 		cancel()
+// 	}))
+//
+// 	<-subCtx.Done()
+//
+// 	return nil
+// }

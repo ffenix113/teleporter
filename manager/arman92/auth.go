@@ -3,6 +3,7 @@ package arman92
 import (
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
 )
@@ -51,9 +52,10 @@ func (c *Client) Auth(r io.Reader, w io.Writer) error {
 				fmt.Printf("Error sending auth password: %v", err)
 			}
 		case tdlib.AuthorizationStateWaitTdlibParametersType:
-			panic("probably wrong client parameters in config: client was not able to send parameters")
+			log.Println("probably wrong client parameters in config: client was not able to send parameters")
 		case tdlib.AuthorizationStateReadyType:
 			return nil
+		case tdlib.AuthorizationStateWaitEncryptionKeyType:
 		default:
 			panic(fmt.Sprintf("unknown returned client auth state: %q", currentState.GetAuthorizationStateEnum()))
 		}

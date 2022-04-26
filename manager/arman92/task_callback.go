@@ -2,19 +2,19 @@ package arman92
 
 import (
 	"context"
-
-	"github.com/ffenix113/teleporter/tasks"
 )
 
+type Task interface{ Run(ctx context.Context) }
+
 type Callback struct {
-	tasks.Task
-	done func(task tasks.Task)
+	Task
+	done func(task Task)
 }
 
 // WithCallback will execute callback when task is done.
 //
 // Note: if task will be restarted - callback will be executed again.
-func WithCallback(task tasks.Task, callback func(task tasks.Task)) Callback {
+func WithCallback(task Task, callback func(task Task)) Callback {
 	return Callback{
 		Task: task,
 		done: callback,

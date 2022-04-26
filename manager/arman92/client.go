@@ -12,14 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Arman92/go-tdlib/v2/client"
 	"github.com/Arman92/go-tdlib/v2/tdlib"
 
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager"
-	"github.com/ffenix113/teleporter/tasks"
 )
 
 const Teleporter = "Teleporter"
@@ -33,7 +31,6 @@ type Client struct {
 	PinnedHeader manager.PinnedHeader
 	FileTree     *manager.Tree
 	FilesPath    string
-	TaskMonitor  *tasks.Monitor
 	rawUpdates   chan tdlib.UpdateMsg
 	// chatID is the chat in which files are stored.
 	chatID int64
@@ -61,7 +58,6 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 
 	c := &Client{
 		TDClient:     client,
-		TaskMonitor:  tasks.NewMonitor(ctx),
 		FilesPath:    cnf.App.FilesPath,
 		TempPath:     cnf.App.TempPath,
 		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
@@ -118,14 +114,6 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 
 	return c, nil
-}
-
-func (c *Client) AddTask(tsk tasks.Task) {
-	c.TaskMonitor.AddTask(tsk)
-}
-
-func (c *Client) AddPreAddHook(hook tasks.Hook) {
-	c.TaskMonitor.AddPreAddHook(hook)
 }
 
 func (c *Client) AddUpdateHandler(handler UpdateHandler) {
@@ -237,11 +225,7 @@ func (c *Client) addFilesToTree() {
 	for filePath, msgID := range c.PinnedHeader.Files {
 		data, err := c.GetFileDataByMsgID(context.TODO(), msgID)
 		if err != nil {
-			c.AddTask(NewStaticTask(filePath, &Common{
-				taskType: "FetchData",
-				status:   tasks.TaskStatusError,
-				details:  fmt.Sprintf("get file header: %s", err.Error()),
-			}))
+			log.Println("get file data by msg id:", err)
 			continue
 		}
 
@@ -253,71 +237,93 @@ func (c *Client) addFilesToTree() {
 	}
 }
 
-func (c *Client) SynchronizeFiles() error {
-	c.DownloadRemoteFiles()
-
-	err := filepath.WalkDir(c.FilesPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		if _, exists := c.PinnedHeader.Files[c.RelativePath(path)]; !exists {
-			c.AddTask(NewUploadFile(c, path))
-		}
-
-		return nil
-	})
-
+func (c *Client) EnsureLocalFileExists(fileID int32) (string, error) {
+	fl, err := c.TDClient.GetFile(fileID)
 	if err != nil {
-		return fmt.Errorf("walk dir: %w", err)
+		return "", fmt.Errorf("get file: %w", err)
+	}
+
+	if fl.Local.IsDownloadingCompleted {
+		_, err := os.Stat(fl.Local.Path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("stat file: %w", err)
+		}
+
+		if err == nil {
+			return fl.Local.Path, nil
+		}
+	}
+
+	fl, err = c.TDClient.DownloadFile(fileID, 1, 0, 0, true)
+	if err != nil {
+		return "", fmt.Errorf("download file: %w", err)
+	}
+
+	return fl.Local.Path, nil
+}
+
+func (c *Client) DeleteFileWithMessage(chatID, messageID int64, fileID int32) error {
+	file, err := c.TDClient.GetFile(fileID)
+	if err != nil {
+		return fmt.Errorf("get file: %w", err)
+	}
+
+	if file.Local.CanBeDeleted {
+		if _, err := c.TDClient.DeleteFile(fileID); err != nil {
+			return fmt.Errorf("delete file: %w", err)
+		}
+	}
+
+	_, err = c.TDClient.DeleteMessages(chatID, []int64{messageID}, true)
+	if err != nil {
+		return fmt.Errorf("delete message with file: %w", err)
 	}
 
 	return nil
 }
 
-func (c *Client) DownloadRemoteFiles() {
-	for relativeFilePath, msgID := range c.PinnedHeader.Files {
-		stat, err := os.Stat(c.AbsPath(relativeFilePath))
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				c.AddTask(NewDownloadFile(c, relativeFilePath, "file does not exist"))
-				continue
-			}
-
-			c.AddTask(NewStaticTask(relativeFilePath, &Common{
-				taskType: "VerifyLocalFileExist",
-				status:   tasks.TaskStatusError,
-				progress: 100,
-				details:  fmt.Sprintf("local file stat: %s", err.Error()),
-			}))
-
-			continue
-		}
-
-		data, err := c.GetFileDataByMsgID(context.TODO(), msgID)
-		if err != nil {
-			c.AddTask(NewStaticTask(relativeFilePath, &Common{
-				taskType: "VerifyLocalFileExist",
-				status:   tasks.TaskStatusError,
-				progress: 100,
-				details:  fmt.Sprintf("get file header: %s", err.Error()),
-			}))
-			continue
-		}
-
-		// TODO: decrypt file data
-
-		switch {
-		case data.FileUpdatedAt.After(stat.ModTime()):
-			c.AddTask(NewDownloadFile(c, relativeFilePath, fmt.Sprintf("%s > %s", data.FileUpdatedAt.Format(time.RFC3339Nano), stat.ModTime().Format(time.RFC3339Nano))))
-		case data.FileUpdatedAt.Before(stat.ModTime()):
-			c.AddTask(NewUploadFile(c, c.AbsPath(relativeFilePath)))
-		}
+func (c *Client) UploadFile(localPath, realPath string) (int64, int32, error) {
+	msgID, fileID, err := NewUploadFile(c, localPath, realPath).Upload(context.Background())
+	if err != nil {
+		return 0, 0, fmt.Errorf("upload file: %w", err)
 	}
+
+	return msgID, fileID, nil
+}
+
+func (c *Client) UpdateFile(msgID int64, localPath, realPath string) (int32, error) {
+	fileID, err := NewUploadFile(c, localPath, realPath).Update(context.Background(), msgID)
+	if err != nil {
+		return 0, fmt.Errorf("upload file: %w", err)
+	}
+
+	return fileID, nil
+}
+
+func (c *Client) ChangeFileCaption(msgID int64, realPath string) error {
+	fileID, err := c.FileIDFromMessage(c.chatID, msgID)
+	if err != nil {
+		return fmt.Errorf("get file id from message: %w", err)
+	}
+
+	tgFile, err := c.TDClient.GetFile(fileID)
+	if err != nil {
+		return fmt.Errorf("get file: %w", err)
+	}
+
+	_, err = c.TDClient.EditMessageMedia(c.chatID, msgID, nil,
+		tdlib.NewInputMessageDocument(
+			tdlib.NewInputFileRemote(tgFile.Remote.ID),
+			nil,
+			false,
+			tdlib.NewFormattedText(realPath, nil),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("upload file: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) RelativePath(absPath string) string {
@@ -330,4 +336,18 @@ func (c *Client) AbsPath(relative string) string {
 
 func (c *Client) tempPath() string {
 	return path.Join(filepath.Dir(c.FilesPath), ".tmp")
+}
+
+func (c *Client) FileIDFromMessage(chatID, msgID int64) (int32, error) {
+	msg, err := c.TDClient.GetMessage(chatID, msgID)
+	if err != nil {
+		return 0, fmt.Errorf("get message: %w", err)
+	}
+
+	msgDoc, _ := msg.Content.(*tdlib.MessageDocument)
+	if msgDoc == nil {
+		return 0, fmt.Errorf("message %d:%d does not contain attachments", chatID, msgID)
+	}
+
+	return msgDoc.Document.Document.ID, nil
 }

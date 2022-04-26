@@ -28,7 +28,7 @@ build: $(CLANG_PP)
 	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
 
 build-docker:
-	[[ "X$(VERSION)" -eq "X" ]] && (echo "VERSION is not defined"; exit 1;)
+	test ! "X$(VERSION)" = "X"  || ( echo "VERSION is not defined" && exit 1 )
 	docker buildx build --platform linux/arm64 -t flayer/teleporter:$(VERSION) -f Dockerfile --push .
 
 $(CLANG_PP):

@@ -30,7 +30,7 @@ func (c *Client) ListenHeaderMessageUpdates(update tdlib.UpdateMsg) bool {
 		return false
 	}
 
-	c.DownloadRemoteFiles()
+	// c.DownloadRemoteFiles()
 
 	return false
 }

@@ -2,46 +2,67 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 	"os/signal"
+	"time"
+
+	ftpserver "github.com/fclairamb/ftpserverlib"
+	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
 
 	"github.com/ffenix113/teleporter/config"
-	"github.com/ffenix113/teleporter/fsnotify"
+	"github.com/ffenix113/teleporter/ftp"
 	"github.com/ffenix113/teleporter/manager/arman92"
-	"github.com/ffenix113/teleporter/web"
+
+	adapter "github.com/fclairamb/go-log/zap"
+	"go.uber.org/zap"
 )
 
 func main() {
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.Llongfile | log.Lmicroseconds)
-	log.Println("hello")
+	logCnf := zap.NewDevelopmentConfig()
+	logCnf.Level.SetLevel(zap.DebugLevel)
+	logger, _ := logCnf.Build(zap.WithCaller(true))
 
 	cnf := config.Load()
 
-	log.Println("create client")
+	logger.Debug("create client")
 	cl, err := arman92.NewClient(context.Background(), cnf)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Println("starting web server")
-	go web.Listen(cnf, cnf.App.WebListen, cnf.App.TemplatePath, cl)
-
-	log.Println("update files state on start")
-	if err := cl.SynchronizeFiles(); err != nil {
+	dbConn, err := sql.Open("pgx", cnf.DB.DSN)
+	if err != nil {
 		panic(err)
 	}
-	log.Println("update files state on start done")
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	if err := dbConn.PingContext(ctx); err != nil {
+		panic(err)
+	}
+	cancel()
+	logger.Debug("db available")
+
+	db := bun.NewDB(dbConn, pgdialect.New())
+
+	ftpServer := ftpserver.NewFtpServer(ftp.NewDriver(db, cl, cnf.FTP, logger))
+	ftpServer.Logger = adapter.NewWrap(logger.Sugar())
+
+	go func() {
+		log.Printf("start ftp server on addr %q\n", cnf.FTP.ListenAddr)
+		if err := ftpServer.ListenAndServe(); err != nil {
+			panic(err)
+		}
+	}()
+
+	ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	log.Println("start file listener")
-	listener := fsnotify.NewListener(cnf.App.FilesPath, cl)
-
-	log.Println("waiting for exit")
+	logger.Debug("waiting for exit")
 	<-ctx.Done()
-	listener.Close()
-	log.Println("Shutdown", ctx.Err().Error())
+	ftpServer.Stop()
+	logger.Debug("Shutdown", zap.Error(ctx.Err()))
 }

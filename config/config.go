@@ -6,11 +6,14 @@ import (
 	"path"
 
 	"github.com/Arman92/go-tdlib/v2/client"
+	ftpserver "github.com/fclairamb/ftpserverlib"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	App      App
+	DB       DB
+	FTP      *ftpserver.Settings
 	Telegram Telegram
 }
 
@@ -24,6 +27,10 @@ type App struct {
 	IPWhitelist  []string
 }
 
+type DB struct {
+	DSN string
+}
+
 type Telegram struct {
 	ChatName string
 	ChatID   int64
@@ -31,17 +38,12 @@ type Telegram struct {
 	Config   client.Config
 }
 
-func Load() (c Config) {
+func Load(configPaths ...string) (c Config) {
 	cwd, _ := os.Getwd()
-	configFile := path.Join(cwd, "config.yml")
+	configPaths = append(configPaths, path.Join(cwd, "config.yml"))
 
 	if envConfigFile := os.Getenv("CONFIG_FILE"); envConfigFile != "" {
-		configFile = envConfigFile
-	}
-
-	d, err := ioutil.ReadFile(configFile)
-	if err != nil {
-		panic(err)
+		configPaths = append(configPaths, envConfigFile)
 	}
 
 	c.Telegram.Config = client.Config{
@@ -58,8 +60,19 @@ func Load() (c Config) {
 		IgnoreFileNames:     false,
 	}
 
-	if err := yaml.Unmarshal(d, &c); err != nil {
-		panic(err)
+	for _, configPath := range configPaths {
+		if _, err := os.Stat(configPath); err != nil {
+			continue
+		}
+
+		d, err := ioutil.ReadFile(configPath)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := yaml.Unmarshal(d, &c); err != nil {
+			panic(err)
+		}
 	}
 
 	return
