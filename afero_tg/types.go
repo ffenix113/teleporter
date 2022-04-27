@@ -21,8 +21,9 @@ func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (*File, 
 	switch len(i) {
 	case 0:
 		return &File{
-			files: i,
-			flag:  flag,
+			files:  i,
+			flag:   flag,
+			driver: driver,
 		}, nil
 	case 1:
 		fl := i[0]
@@ -70,8 +71,9 @@ func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (*File, 
 
 	// This is a directory, just pass in file info that we have
 	return &File{
-		files: i,
-		flag:  flag,
+		files:  i,
+		flag:   flag,
+		driver: driver,
 	}, nil
 }
 
@@ -207,6 +209,14 @@ func (f *File) Readdirnames(n int) ([]string, error) {
 	f.readDirNamesN += n
 
 	return dirNames, nil
+}
+
+func (f *File) Sync() error {
+	if f.File != nil {
+		return f.File.Sync()
+	}
+
+	return nil
 }
 
 func (f *File) Close() error {

@@ -1,13 +1,21 @@
 package ftp
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"math/big"
 	"net"
+	"time"
 
 	ftpserver "github.com/fclairamb/ftpserverlib"
 	"github.com/jackc/pgconn"
@@ -28,6 +36,8 @@ type Driver struct {
 
 	settings config.FTP
 
+	tlsConf *tls.Config
+
 	logger *zap.Logger
 }
 
@@ -37,6 +47,7 @@ func NewDriver(db *bun.DB, tgClient *arman92.Client, settings config.FTP, logger
 		tgClient: tgClient,
 		settings: settings,
 		logger:   logger,
+		tlsConf:  loadCerts(), // generateTLSConfig(),
 	}
 }
 
@@ -86,7 +97,6 @@ func (d *Driver) AuthUser(cc ftpserver.ClientContext, user, pass string) (ftpser
 		tg = afero_tg.NewWrapper(tg, logger)
 	}
 
-	d.logger.Debug("creating root")
 	if err := tg.MkdirAll("/", fs.ModePerm|fs.ModeDir); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
@@ -100,5 +110,68 @@ func (d *Driver) AuthUser(cc ftpserver.ClientContext, user, pass string) (ftpser
 }
 
 func (d *Driver) GetTLSConfig() (*tls.Config, error) {
-	return nil, nil
+	return d.tlsConf, nil
+}
+
+func loadCerts() *tls.Config {
+	cert, err := tls.LoadX509KeyPair("./cert.pem", "./key.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+}
+
+func generateTLSConfig() *tls.Config {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		log.Fatalf("Failed to generate serial number: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"server"},
+		},
+		DNSNames:  []string{"localhost"},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %v", err)
+	}
+
+	pemCert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	if pemCert == nil {
+		log.Fatal("Failed to encode certificate to PEM")
+	}
+	privBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		log.Fatalf("Unable to marshal private key: %v", err)
+	}
+	pemKey := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	if pemKey == nil {
+		log.Fatal("Failed to encode key to PEM")
+	}
+
+	cert, err := tls.X509KeyPair(pemCert, pemKey)
+	if err != nil {
+		log.Fatalf("Failed to load certificate: %v", err)
+	}
+
+	return &tls.Config{Certificates: []tls.Certificate{cert}}
 }

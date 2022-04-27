@@ -26,6 +26,7 @@ func main() {
 	logCnf.Level.SetLevel(zap.DebugLevel)
 	logger, _ := logCnf.Build(zap.WithCaller(true))
 
+	logger.Debug("loading config")
 	cnf := config.Load()
 
 	logger.Debug("create client")

@@ -43,12 +43,13 @@ func NewID() string {
 
 func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgClient *arman92.Client, logger *zap.Logger) (*Telegram, error) {
 	var chatName string
-	if err := client.QueryRow("select chat_id from users where id = ?", userID).Scan(&chatName); err != nil {
+	var chatID sql.NullInt64
+	if err := client.QueryRow("select chat_name, chat_id from users where id = ?", userID).Scan(&chatName, &chatID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("user %q not found in db", userID)
 		}
 
-		return nil, fmt.Errorf("fetch chat_id: %w", err)
+		return nil, fmt.Errorf("fetch chat name or id: %w", err)
 	}
 
 	tg := &Telegram{
@@ -61,7 +62,7 @@ func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgCl
 	}
 
 	if tgClient != nil {
-		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: chatName})
+		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: chatName, ChatID: chatID.Int64})
 		if err != nil {
 			return nil, fmt.Errorf("find chat: %w", err)
 		}

@@ -15,13 +15,19 @@ const header = `"Header": "Teleporter"`
 
 func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Chat, error) {
 	if tConf.ChatName != "" {
-		chats, err := c.TDClient.SearchChatsOnServer(tConf.ChatName, 2)
+		chats, err := c.TDClient.SearchChats(tConf.ChatName, 1)
 		if err != nil {
-			return nil, fmt.Errorf("search chat: %w", err)
+			return nil, fmt.Errorf("find offline chat: %w", err)
 		}
-
 		if len(chats.ChatIDs) != 1 {
-			return nil, fmt.Errorf("wrong number of channels found: want: 1, found: %d", len(chats.ChatIDs))
+			chats, err = c.TDClient.SearchChatsOnServer(tConf.ChatName, 2)
+			if err != nil {
+				return nil, fmt.Errorf("search chat: %w", err)
+			}
+
+			if len(chats.ChatIDs) != 1 {
+				return nil, fmt.Errorf("wrong number of channels found: want: 1, found: %d", len(chats.ChatIDs))
+			}
 		}
 
 		tConf.ChatID = chats.ChatIDs[0]

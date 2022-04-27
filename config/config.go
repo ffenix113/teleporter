@@ -53,18 +53,31 @@ func Load(configPaths ...string) (c Config) {
 		configPaths = append(configPaths, envConfigFile)
 	}
 
-	c.Telegram.Config = client.Config{
-		SystemLanguageCode:  "en",
-		DeviceModel:         "Server",
-		SystemVersion:       "1.0.0",
-		ApplicationVersion:  "1.0.0",
-		UseMessageDatabase:  true,
-		UseFileDatabase:     false,
-		UseChatInfoDatabase: true,
-		UseTestDataCenter:   false,
-		DatabaseDirectory:   ".tdlib/database",
-		FileDirectory:       ".tdlib/files",
-		IgnoreFileNames:     false,
+	c = Config{
+		Telegram: Telegram{
+			Config: client.Config{
+				SystemLanguageCode:  "en",
+				DeviceModel:         "Server",
+				SystemVersion:       "1.0.0",
+				ApplicationVersion:  "1.0.0",
+				UseMessageDatabase:  true,
+				UseFileDatabase:     false,
+				UseChatInfoDatabase: true,
+				UseTestDataCenter:   false,
+				DatabaseDirectory:   ".tdlib/database",
+				FileDirectory:       ".tdlib/files",
+				IgnoreFileNames:     false,
+			},
+		},
+		FTP: FTP{
+			Settings: &ftpserver.Settings{
+				DisableActiveMode: true,
+				PassiveTransferPortRange: &ftpserver.PortRange{
+					Start: 40000,
+					End:   50000,
+				},
+			},
+		},
 	}
 
 	for _, configPath := range configPaths {
