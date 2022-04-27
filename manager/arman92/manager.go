@@ -32,6 +32,10 @@ func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Ch
 		return nil, fmt.Errorf("get chat: %w", err)
 	}
 
+	if !chat.Permissions.CanSendMediaMessages {
+		return nil, fmt.Errorf("client in chat %q is not allowed to send media messages", tConf.ChatName)
+	}
+
 	return chat, nil
 }
 

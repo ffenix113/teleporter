@@ -1,4 +1,4 @@
-package afero
+package afero_tg
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgCl
 	var chatName string
 	if err := client.QueryRow("select chat_id from users where id = ?", userID).Scan(&chatName); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("user %q not found", userID)
+			return nil, fmt.Errorf("user %q not found in db", userID)
 		}
 
 		return nil, fmt.Errorf("fetch chat_id: %w", err)

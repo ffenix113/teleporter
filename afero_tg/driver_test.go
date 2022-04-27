@@ -1,4 +1,4 @@
-package afero
+package afero_tg
 
 import (
 	"context"

@@ -13,7 +13,7 @@ import (
 type Config struct {
 	App      App
 	DB       DB
-	FTP      *ftpserver.Settings
+	FTP      FTP
 	Telegram Telegram
 }
 
@@ -24,11 +24,18 @@ type App struct {
 	TempPath     string
 	WebListen    string
 	TemplatePath string
-	IPWhitelist  []string
 }
 
 type DB struct {
 	DSN string
+}
+
+type FTP struct {
+	*ftpserver.Settings `yaml:",inline"`
+	Users               map[string]string
+	Debug               bool
+	IPWhitelist         []string
+	IPWhitelistMap      map[string]struct{} `yaml:"-"`
 }
 
 type Telegram struct {
@@ -73,6 +80,11 @@ func Load(configPaths ...string) (c Config) {
 		if err := yaml.Unmarshal(d, &c); err != nil {
 			panic(err)
 		}
+	}
+
+	c.FTP.IPWhitelistMap = map[string]struct{}{}
+	for _, ip := range c.FTP.IPWhitelist {
+		c.FTP.IPWhitelistMap[ip] = struct{}{}
 	}
 
 	return
