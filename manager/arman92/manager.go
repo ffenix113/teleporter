@@ -3,7 +3,6 @@ package arman92
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
 
@@ -43,77 +42,6 @@ func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Ch
 	}
 
 	return chat, nil
-}
-
-func (c *Client) GetOrInitPinnedMessage(ctx context.Context, chatID int64) (tdlib.Message, error) {
-	msg, err := c.TDClient.SearchChatMessages(
-		c.chatID,
-		header, // Constant
-		nil,
-		0,
-		0,
-		100,
-		tdlib.NewSearchMessagesFilterPinned(),
-		0,
-	)
-	if err != nil {
-		return tdlib.Message{}, fmt.Errorf("search pinned message: %w", err)
-	}
-
-	var pinnedMessage tdlib.Message
-	switch len(msg.Messages) {
-	case 0:
-		pinnedMessage, err = c.CreatePinnedMessage(ctx, chatID)
-		if err != nil {
-			return tdlib.Message{}, fmt.Errorf("create pinned message: %w", err)
-		}
-	default:
-		pinnedMessage = msg.Messages[0]
-	}
-
-	return pinnedMessage, nil
-}
-
-func (c *Client) CreatePinnedMessage(ctx context.Context, chatID int64) (tdlib.Message, error) {
-	d, _ := manager.Marshal(c.PinnedHeader)
-	data := strings.TrimSpace(string(d))
-
-	m, err := c.SendMessage(chatID, 0, 0,
-		tdlib.NewMessageSendOptions(true, false, nil),
-		nil,
-		tdlib.NewInputMessageText(tdlib.NewFormattedText(data, nil), true, false))
-	if err != nil {
-		return tdlib.Message{}, fmt.Errorf("send message: %w", err)
-	}
-
-	m, err = c.TDClient.GetMessage(chatID, m.ID)
-	if err != nil {
-		return tdlib.Message{}, fmt.Errorf("find new header message: %w", err)
-	}
-
-	_, err = c.TDClient.PinChatMessage(m.ChatID, m.ID, true, false)
-	if err != nil {
-		return tdlib.Message{}, fmt.Errorf("pin message: %w", err)
-	}
-
-	return *m, nil
-}
-
-// SendHeader is used to update header in the Telegram chat.
-func (c *Client) SendHeader(ctx context.Context) error {
-	headerBytes, err := manager.Marshal(c.PinnedHeader)
-	if err != nil {
-		return fmt.Errorf("marshal header to yaml: %w", err)
-	}
-
-	msgText := tdlib.NewInputMessageText(tdlib.NewFormattedText(string(headerBytes), nil), true, false)
-
-	_, err = c.TDClient.EditMessageText(c.chatID, c.pinnedHeaderMessageID, nil, msgText)
-	if err != nil {
-		return fmt.Errorf("edit header message text: %w", err)
-	}
-
-	return nil
 }
 
 func (c *Client) EnsureMessagesAreKnown(ctx context.Context, ids ...int64) error {

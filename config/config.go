@@ -74,7 +74,7 @@ func Load(configPaths ...string) (c Config) {
 				DisableActiveMode: true,
 				PassiveTransferPortRange: &ftpserver.PortRange{
 					Start: 40000,
-					End:   50000,
+					End:   40100,
 				},
 			},
 		},

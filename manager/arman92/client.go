@@ -17,7 +17,6 @@ import (
 	"github.com/Arman92/go-tdlib/v2/tdlib"
 
 	"github.com/ffenix113/teleporter/config"
-	"github.com/ffenix113/teleporter/manager"
 )
 
 const Teleporter = "Teleporter"
@@ -27,11 +26,9 @@ const Teleporter = "Teleporter"
 type UpdateHandler func(update tdlib.UpdateMsg) bool
 
 type Client struct {
-	TDClient     *client.Client
-	PinnedHeader manager.PinnedHeader
-	FileTree     *manager.Tree
-	FilesPath    string
-	rawUpdates   chan tdlib.UpdateMsg
+	TDClient   *client.Client
+	FilesPath  string
+	rawUpdates chan tdlib.UpdateMsg
 	// chatID is the chat in which files are stored.
 	chatID int64
 	// pinnedHeaderMessageID is the ID of the pinned header.
@@ -57,11 +54,9 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 
 	c := &Client{
-		TDClient:     client,
-		FilesPath:    cnf.App.FilesPath,
-		TempPath:     cnf.App.TempPath,
-		PinnedHeader: manager.PinnedHeader{Header: Teleporter, Files: map[string]int64{}},
-		FileTree:     &manager.Tree{},
+		TDClient:  client,
+		FilesPath: cnf.App.FilesPath,
+		TempPath:  cnf.App.TempPath,
 	}
 
 	if c.TempPath == "" {
@@ -79,7 +74,6 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 
 	c.rawUpdates = c.TDClient.GetRawUpdatesChannel(10)
 	// c.AddUpdateHandler(VerboseUpdateHandler)
-	c.AddUpdateHandler(c.ListenHeaderMessageUpdates)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -107,11 +101,6 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	go c.listenRawUpdates()
 
 	wg.Wait()
-
-	log.Println("fetching init information")
-	if err := c.FetchInitInformation(ctx, cnf.Telegram); err != nil {
-		return nil, fmt.Errorf("fetch init: %w", err)
-	}
 
 	return c, nil
 }
@@ -194,47 +183,6 @@ func (c *Client) waitForMessageSent(msgID int64) (newMsgID int64, err error) {
 
 	<-waiter
 	return
-}
-
-func (c *Client) FetchInitInformation(ctx context.Context, tConf config.Telegram) error {
-	filesChat, err := c.FindChat(ctx, tConf)
-	if err != nil {
-		return fmt.Errorf("find chat: %w", err)
-	}
-
-	c.chatID = filesChat.ID
-	pinnedHeader, err := c.GetOrInitPinnedMessage(ctx, c.chatID)
-	if err != nil {
-		return fmt.Errorf("find or init pinned message: %w", err)
-	}
-
-	c.pinnedHeaderMessageID = pinnedHeader.ID
-
-	if err := manager.Unmarshal([]byte(pinnedHeader.Content.(*tdlib.MessageText).Text.Text), &c.PinnedHeader); err != nil {
-		return fmt.Errorf("unmarshal pinned message text: %w", err)
-	}
-
-	// TODO: decrypt if header is encrypted. Do in next iteration.
-
-	c.addFilesToTree()
-
-	return nil
-}
-
-func (c *Client) addFilesToTree() {
-	for filePath, msgID := range c.PinnedHeader.Files {
-		data, err := c.GetFileDataByMsgID(context.TODO(), msgID)
-		if err != nil {
-			log.Println("get file data by msg id:", err)
-			continue
-		}
-
-		data.Name = filepath.Base(data.Path)
-
-		c.FileTree.Add(filePath, &manager.Tree{
-			File: &data,
-		})
-	}
 }
 
 func (c *Client) EnsureLocalFileExists(fileID int32) (string, error) {
