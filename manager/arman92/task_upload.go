@@ -32,7 +32,7 @@ func (f *UploadFile) Upload(ctx context.Context, chatID int64) (msgID int64, fil
 
 	// TODO: update path for encrypted file.
 	msg, err := f.Client.SendMessage(chatID, 0, 0,
-		tdlib.NewMessageSendOptions(true, false, nil),
+		tdlib.NewMessageSendOptions(true, true, nil),
 		nil,
 		tdlib.NewInputMessageDocument(
 			tdlib.NewInputFileLocal(f.TempPath),

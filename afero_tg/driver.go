@@ -158,6 +158,8 @@ func (t *Telegram) Open(name string) (afero.File, error) {
 }
 
 func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	t.logger.Debug("open file", zap.Strings("flag", flagBits(flag)))
+
 	dbFile, err := t.fetchItemInfo(context.Background(), name)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE != 0 {
@@ -173,7 +175,7 @@ func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File
 	}
 
 	if !dbFile.IsDir() {
-		return DBFilesInfo{&dbFile}.File(t, flag, perm)
+		return DBFilesInfo{&dbFile}.File(t, flag)
 	}
 
 	dbFiles, err := t.fetchItemsInDir(context.Background(), name)
@@ -185,7 +187,7 @@ func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File
 		return &Directory{}, nil
 	}
 
-	return dbFiles.File(t, flag, perm)
+	return dbFiles.File(t, flag)
 }
 
 func (t *Telegram) Remove(name string) error {
@@ -412,4 +414,25 @@ func (t *Telegram) updateFile(ctx context.Context, file *File) error {
 	}
 
 	return nil
+}
+
+var _flagBits = map[int]string{
+	os.O_RDONLY: "O_RDONLY",
+	os.O_RDWR:   "O_RDWR",
+	os.O_WRONLY: "O_WRONLY",
+	os.O_APPEND: "O_APPEND",
+	os.O_CREATE: "O_CREATE",
+	os.O_EXCL:   "O_EXCL",
+	os.O_SYNC:   "O_SYNC",
+	os.O_TRUNC:  "O_TRUNC",
+}
+
+func flagBits(flag int) (bts []string) {
+	for flagBit, flagName := range _flagBits {
+		if flag&flagBit == flagBit {
+			bts = append(bts, flagName)
+		}
+	}
+
+	return
 }

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 type File struct {
-	*os.File
+	afero.File
 	driver *Telegram
 
 	modifiedAt time.Time
@@ -18,11 +21,38 @@ type File struct {
 	files DBFilesInfo
 }
 
-func (f *File) Readdir(count int) ([]os.FileInfo, error) {
+func (f *File) Write(p []byte) (n int, err error) {
+	return f.File.Write(p)
+}
+
+func (f *File) ReadFrom(r io.Reader) (n int64, err error) {
+	buf := make([]byte, 32*1024)
+
+	for {
+		rn, err := r.Read(buf)
+
+		if rn != 0 {
+			if _, err := f.Write(buf[:rn]); err != nil {
+				return n, err
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return n, err
+		}
+
+		n += int64(rn)
+	}
+}
+
+func (f *File) Readdir(_ int) ([]os.FileInfo, error) {
 	return nil, nil
 }
 
-func (f *File) Readdirnames(n int) ([]string, error) {
+func (f *File) Readdirnames(_ int) ([]string, error) {
 	return nil, nil
 }
 
@@ -35,7 +65,7 @@ func (f *File) Close() error {
 	dbFile := f.files[0]
 	dbFile.SizeField = stat.Size()
 
-	if f.flag&os.O_CREATE != 0 {
+	if f.flag&os.O_CREATE == os.O_CREATE {
 		if err := f.upload(); err != nil {
 			return fmt.Errorf("upload: %w", err)
 		}
@@ -43,7 +73,7 @@ func (f *File) Close() error {
 		if err := f.driver.insertFile(context.Background(), f); err != nil {
 			return fmt.Errorf("insert file: %w", err)
 		}
-	} else {
+	} else if f.flag&os.O_WRONLY == os.O_WRONLY || f.flag&os.O_RDWR == os.O_RDWR {
 		stat, _ := f.File.Stat()
 		if stat.ModTime().After(f.modifiedAt) {
 			if err := f.update(); err != nil {

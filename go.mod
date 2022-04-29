@@ -3,7 +3,7 @@ module github.com/ffenix113/teleporter
 go 1.18
 
 require (
-	github.com/Arman92/go-tdlib/v2 v2.0.0
+	github.com/Arman92/go-tdlib/v2 v2.0.0-20220114120352-3b65411f19c6
 	github.com/fclairamb/ftpserverlib v0.17.0
 	github.com/fclairamb/go-log v0.3.0
 	github.com/google/uuid v1.1.2

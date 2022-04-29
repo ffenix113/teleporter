@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"time"
 
@@ -16,9 +15,11 @@ import (
 
 var _ fs.FileInfo = DBFileInfo{}
 
+const DownloadChunkSize = 16 * 1024
+
 type DBFilesInfo []*DBFileInfo
 
-func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (afero.File, error) {
+func (i DBFilesInfo) File(driver *Telegram, flag int) (afero.File, error) {
 	if len(i) == 1 && !i[0].IsDir() {
 		fl := i[0]
 
@@ -39,24 +40,13 @@ func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (afero.F
 			return nil, fmt.Errorf("failed to get message: %w", err)
 		}
 
-		filePath, err := driver.tgClient.EnsureLocalFileExists(msg.Content.(*tdlib.MessageDocument).Document.Document.ID)
-		if err != nil {
-			return nil, fmt.Errorf("ensure local file: %w", err)
-		}
-
-		osFile, err := os.OpenFile(filePath, flag, perm)
-		if err != nil {
-			return nil, fmt.Errorf("open file: %w", err)
-		}
-
-		stat, _ := osFile.Stat()
+		remoteReader := NewRemoteFileReader(driver.tgClient, msg.Content.(*tdlib.MessageDocument).Document.Document.ID, DownloadChunkSize)
 
 		return &File{
-			driver:     driver,
-			flag:       flag,
-			File:       osFile,
-			modifiedAt: stat.ModTime(),
-			files:      i,
+			driver: driver,
+			flag:   flag,
+			File:   remoteReader,
+			files:  i,
 		}, nil
 	}
 
