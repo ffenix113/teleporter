@@ -2,6 +2,7 @@ package config
 
 import (
 	"io/ioutil"
+	"log"
 	"os"
 	"path"
 
@@ -71,6 +72,7 @@ func Load(configPaths ...string) (c Config) {
 		},
 		FTP: FTP{
 			Settings: &ftpserver.Settings{
+				PublicHost:        "87.210.149.34",
 				DisableActiveMode: true,
 				PassiveTransferPortRange: &ftpserver.PortRange{
 					Start: 40000,
@@ -80,8 +82,10 @@ func Load(configPaths ...string) (c Config) {
 		},
 	}
 
+	var fileFound bool
 	for _, configPath := range configPaths {
 		if _, err := os.Stat(configPath); err != nil {
+			log.Printf("config file %q: %s\n", configPath, err.Error())
 			continue
 		}
 
@@ -93,6 +97,11 @@ func Load(configPaths ...string) (c Config) {
 		if err := yaml.Unmarshal(d, &c); err != nil {
 			panic(err)
 		}
+		fileFound = true
+	}
+
+	if !fileFound {
+		panic("No config file found")
 	}
 
 	c.FTP.IPWhitelistMap = map[string]struct{}{}
