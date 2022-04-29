@@ -27,11 +27,11 @@ func NewUploadFile(cl *Client, tempFilePath, realPath string) *UploadFile {
 	}
 }
 
-func (f *UploadFile) Upload(ctx context.Context) (int64, int32, error) {
+func (f *UploadFile) Upload(ctx context.Context, chatID int64) (msgID int64, fileID int32, err error) {
 	uploadFinished := f.watchUpload() // This may dangle if upload will screw up.
 
 	// TODO: update path for encrypted file.
-	msg, err := f.Client.SendMessage(f.Client.chatID, 0, 0,
+	msg, err := f.Client.SendMessage(chatID, 0, 0,
 		tdlib.NewMessageSendOptions(true, false, nil),
 		nil,
 		tdlib.NewInputMessageDocument(
@@ -56,10 +56,10 @@ func (f *UploadFile) Upload(ctx context.Context) (int64, int32, error) {
 	return msg.ID, msgDoc.Document.Document.ID, nil
 }
 
-func (f *UploadFile) Update(_ context.Context, msgID int64) (int32, error) {
+func (f *UploadFile) Update(_ context.Context, chatID, msgID int64) (int32, error) {
 	uploadFinished := f.watchUpload() // This may dangle if upload will screw up.
 
-	msg, err := f.Client.TDClient.EditMessageMedia(f.Client.chatID, msgID, nil,
+	msg, err := f.Client.TDClient.EditMessageMedia(chatID, msgID, nil,
 		tdlib.NewInputMessageDocument(
 			tdlib.NewInputFileLocal(f.TempPath),
 			nil,

@@ -72,7 +72,6 @@ func Load(configPaths ...string) (c Config) {
 		},
 		FTP: FTP{
 			Settings: &ftpserver.Settings{
-				PublicHost:        "87.210.149.34",
 				DisableActiveMode: true,
 				PassiveTransferPortRange: &ftpserver.PortRange{
 					Start: 40000,

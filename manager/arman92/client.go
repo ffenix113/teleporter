@@ -29,10 +29,6 @@ type Client struct {
 	TDClient   *client.Client
 	FilesPath  string
 	rawUpdates chan tdlib.UpdateMsg
-	// chatID is the chat in which files are stored.
-	chatID int64
-	// pinnedHeaderMessageID is the ID of the pinned header.
-	pinnedHeaderMessageID int64
 
 	updateHandlers   []UpdateHandler
 	updateHandlersMu sync.Mutex
@@ -47,14 +43,14 @@ type Client struct {
 func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	client.SetLogVerbosityLevel(cnf.Telegram.LogLevel)
 	// Create new instance of TDClient
-	client := client.NewClient(cnf.Telegram.Config)
+	tdClient := client.NewClient(cnf.Telegram.Config)
 
 	if !strings.HasSuffix(cnf.App.FilesPath, "/") {
 		cnf.App.FilesPath += "/"
 	}
 
 	c := &Client{
-		TDClient:  client,
+		TDClient:  tdClient,
 		FilesPath: cnf.App.FilesPath,
 		TempPath:  cnf.App.TempPath,
 	}
@@ -70,7 +66,9 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 	}
 
 	log.Println("authenticating")
-	c.Auth(os.Stdin, os.Stdout)
+	if err := c.Auth(os.Stdin, os.Stdout); err != nil {
+		panic(err)
+	}
 
 	c.rawUpdates = c.TDClient.GetRawUpdatesChannel(10)
 	// c.AddUpdateHandler(VerboseUpdateHandler)
@@ -85,7 +83,9 @@ func NewClient(ctx context.Context, cnf config.Config) (*Client, error) {
 			}
 
 			var updateState tdlib.UpdateConnectionState
-			json.Unmarshal(update.Raw, &updateState)
+			if err := json.Unmarshal(update.Raw, &updateState); err != nil {
+				panic(err)
+			}
 
 			connectionState := string(updateState.State.GetConnectionStateEnum())
 			c.ConnectionState = strings.TrimPrefix(connectionState, "connectionState")
@@ -121,10 +121,12 @@ func (c *Client) listenRawUpdates() {
 	// TODO: This should have custom handlers.
 	for update := range c.rawUpdates {
 		c.updateHandlersMu.Lock()
-		for i, handler := range c.updateHandlers {
+		for i := 0; i != len(c.updateHandlers); i++ {
+			handler := c.updateHandlers[i]
 			if handled := handler(update); handled {
-				// FIXME: panics on 'i' here
-				c.updateHandlers = append(c.updateHandlers[:i], c.updateHandlers[i+1:]...)
+				c.updateHandlers[i] = c.updateHandlers[len(c.updateHandlers)-1]
+				c.updateHandlers = c.updateHandlers[:len(c.updateHandlers)-1]
+				i--
 			}
 		}
 		c.updateHandlersMu.Unlock()
@@ -230,8 +232,8 @@ func (c *Client) DeleteFileWithMessage(chatID, messageID int64, fileID int32) er
 	return nil
 }
 
-func (c *Client) UploadFile(localPath, realPath string) (int64, int32, error) {
-	msgID, fileID, err := NewUploadFile(c, localPath, realPath).Upload(context.Background())
+func (c *Client) UploadFile(chatID int64, localPath, realPath string) (int64, int32, error) {
+	msgID, fileID, err := NewUploadFile(c, localPath, realPath).Upload(context.Background(), chatID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("upload file: %w", err)
 	}
@@ -239,8 +241,8 @@ func (c *Client) UploadFile(localPath, realPath string) (int64, int32, error) {
 	return msgID, fileID, nil
 }
 
-func (c *Client) UpdateFile(msgID int64, localPath, realPath string) (int32, error) {
-	fileID, err := NewUploadFile(c, localPath, realPath).Update(context.Background(), msgID)
+func (c *Client) UpdateFile(chatID, msgID int64, localPath, realPath string) (int32, error) {
+	fileID, err := NewUploadFile(c, localPath, realPath).Update(context.Background(), chatID, msgID)
 	if err != nil {
 		return 0, fmt.Errorf("upload file: %w", err)
 	}
@@ -248,8 +250,8 @@ func (c *Client) UpdateFile(msgID int64, localPath, realPath string) (int32, err
 	return fileID, nil
 }
 
-func (c *Client) ChangeFileCaption(msgID int64, realPath string) error {
-	fileID, err := c.FileIDFromMessage(c.chatID, msgID)
+func (c *Client) ChangeFileCaption(chatID, msgID int64, realPath string) error {
+	fileID, err := c.FileIDFromMessage(chatID, msgID)
 	if err != nil {
 		return fmt.Errorf("get file id from message: %w", err)
 	}
@@ -259,7 +261,7 @@ func (c *Client) ChangeFileCaption(msgID int64, realPath string) error {
 		return fmt.Errorf("get file: %w", err)
 	}
 
-	_, err = c.TDClient.EditMessageMedia(c.chatID, msgID, nil,
+	_, err = c.TDClient.EditMessageMedia(chatID, msgID, nil,
 		tdlib.NewInputMessageDocument(
 			tdlib.NewInputFileRemote(tgFile.Remote.ID),
 			nil,

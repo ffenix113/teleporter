@@ -42,7 +42,7 @@ func NewID() string {
 }
 
 func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgClient *arman92.Client, logger *zap.Logger) (*Telegram, error) {
-	var chatName string
+	var chatName sql.NullString
 	var chatID sql.NullInt64
 	if err := client.QueryRow("select chat_name, chat_id from users where id = ?", userID).Scan(&chatName, &chatID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -62,12 +62,14 @@ func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgCl
 	}
 
 	if tgClient != nil {
-		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: chatName, ChatID: chatID.Int64})
+		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: chatName.String, ChatID: chatID.Int64})
 		if err != nil {
 			return nil, fmt.Errorf("find chat: %w", err)
 		}
 
-		// Can check chat permissions here.
+		if !chat.Permissions.CanSendMediaMessages {
+			return nil, fmt.Errorf("client in chat %q is not allowed to send media messages", chat.Title)
+		}
 
 		tg.chatID = chat.ID
 	}
@@ -208,7 +210,7 @@ func (t *Telegram) Remove(name string) error {
 			return fmt.Errorf("cannot remove non-empty dir: %s", name)
 		}
 	} else {
-		if err := arman92.DeleteFile(t.tgClient, fInfo.MessageID); err != nil {
+		if err := arman92.DeleteFile(t.tgClient, fInfo.ChatID, fInfo.MessageID); err != nil {
 			return fmt.Errorf("delete file: %w", err)
 		}
 	}
@@ -249,7 +251,7 @@ func (t *Telegram) Rename(oldname, newname string) error {
 
 	if !oldFile.IsDir() {
 		// If not directory also need to update Telegram message.
-		if err := t.tgClient.ChangeFileCaption(oldFile.MessageID, newname); err != nil {
+		if err := t.tgClient.ChangeFileCaption(oldFile.ChatID, oldFile.MessageID, newname); err != nil {
 			return fmt.Errorf("rename: %w", err)
 		}
 	}

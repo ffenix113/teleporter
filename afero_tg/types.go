@@ -31,7 +31,7 @@ func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (*File, 
 			break
 		}
 
-		if err := driver.tgClient.EnsureMessagesAreKnown(context.Background(), fl.MessageID); err != nil {
+		if err := driver.tgClient.EnsureMessagesAreKnown(context.Background(), fl.ChatID, fl.MessageID); err != nil {
 			return nil, fmt.Errorf("failed to ensure message is known: %w", err)
 		}
 
@@ -261,7 +261,7 @@ func (f *File) upload() error {
 		return errors.New("trying to upload without a file")
 	}
 
-	messageID, fileID, err := f.driver.tgClient.UploadFile(f.File.Name(), f.files[0].AbsName())
+	messageID, fileID, err := f.driver.tgClient.UploadFile(f.driver.chatID, f.File.Name(), f.files[0].AbsName())
 	if err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
@@ -281,7 +281,7 @@ func (f *File) update() error {
 		return nil
 	}
 
-	fileID, err := f.driver.tgClient.UpdateFile(f.files[0].MessageID, f.File.Name(), f.files[0].AbsName())
+	fileID, err := f.driver.tgClient.UpdateFile(f.files[0].ChatID, f.files[0].MessageID, f.File.Name(), f.files[0].AbsName())
 	if err != nil {
 		return fmt.Errorf("upload file: %w", err)
 	}
