@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Arman92/go-tdlib/v2/tdlib"
+	"github.com/spf13/afero"
 	"github.com/uptrace/bun"
 )
 
@@ -17,19 +18,9 @@ var _ fs.FileInfo = DBFileInfo{}
 
 type DBFilesInfo []*DBFileInfo
 
-func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (*File, error) {
-	switch len(i) {
-	case 0:
-		return &File{
-			files:  i,
-			flag:   flag,
-			driver: driver,
-		}, nil
-	case 1:
+func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (afero.File, error) {
+	if len(i) == 1 && !i[0].IsDir() {
 		fl := i[0]
-		if fl.IsDir() {
-			break
-		}
 
 		if err := driver.tgClient.EnsureMessagesAreKnown(context.Background(), fl.ChatID, fl.MessageID); err != nil {
 			return nil, fmt.Errorf("failed to ensure message is known: %w", err)
@@ -70,10 +61,8 @@ func (i DBFilesInfo) File(driver *Telegram, flag int, perm os.FileMode) (*File, 
 	}
 
 	// This is a directory, just pass in file info that we have
-	return &File{
-		files:  i,
-		flag:   flag,
-		driver: driver,
+	return &Directory{
+		files: i,
 	}, nil
 }
 
@@ -128,169 +117,5 @@ func (f DBFileInfo) IsDir() bool {
 }
 
 func (f DBFileInfo) Sys() any {
-	return nil
-}
-
-type File struct {
-	*os.File
-	driver *Telegram
-
-	name       string
-	modifiedAt time.Time
-	// flag is the flags that are passed in to OpenFile/Create
-	flag  int
-	stat  fs.FileInfo
-	files DBFilesInfo
-
-	readDirN      int
-	readDirNamesN int
-}
-
-func (f *File) Name() string {
-	if f.File != nil {
-		return f.File.Name()
-	}
-
-	if f.stat != nil {
-		return f.stat.Name()
-	}
-
-	return f.name
-}
-
-func (f *File) Stat() (fs.FileInfo, error) {
-	if f.File != nil {
-		return f.File.Stat()
-	}
-
-	return f.stat, nil
-}
-
-func (f *File) Readdir(count int) ([]os.FileInfo, error) {
-	if count == -1 {
-		count = len(f.files)
-	}
-	if count > len(f.files)-f.readDirN {
-		count = len(f.files) - f.readDirN
-	}
-	if count < 0 {
-		return nil, nil
-	}
-
-	var files []os.FileInfo
-	for _, file := range f.files[f.readDirN : f.readDirN+count] {
-		files = append(files, file)
-	}
-
-	f.readDirN += count
-
-	return files, nil
-}
-
-func (f *File) Readdirnames(n int) ([]string, error) {
-	if n == -1 {
-		n = len(f.files)
-	}
-	if n > len(f.files)-f.readDirNamesN {
-		n = len(f.files) - f.readDirNamesN
-	}
-	if n < 0 {
-		return nil, nil
-	}
-
-	var dirNames []string
-
-	for _, file := range f.files[f.readDirNamesN : f.readDirNamesN+n] {
-		if file.IsDirField {
-			dirNames = append(dirNames, file.NameField)
-		}
-	}
-
-	f.readDirNamesN += n
-
-	return dirNames, nil
-}
-
-func (f *File) Sync() error {
-	if f.File != nil {
-		return f.File.Sync()
-	}
-
-	return nil
-}
-
-func (f *File) Close() error {
-	if f.File == nil {
-		return nil
-	}
-
-	stat, _ := f.File.Stat()
-	dbFile := f.files[0]
-	dbFile.SizeField = stat.Size()
-
-	if f.flag&os.O_CREATE != 0 {
-		if err := f.upload(); err != nil {
-			return fmt.Errorf("upload: %w", err)
-		}
-
-		if err := f.driver.insertFile(context.Background(), f); err != nil {
-			return fmt.Errorf("insert file: %w", err)
-		}
-	} else {
-		stat, _ := f.File.Stat()
-		if stat.ModTime().After(f.modifiedAt) {
-			if err := f.update(); err != nil {
-				return fmt.Errorf("upload: %w", err)
-			}
-
-			if err := f.driver.updateFile(context.Background(), f); err != nil {
-				return fmt.Errorf("insert file: %w", err)
-			}
-		}
-	}
-
-	if err := os.Remove(f.File.Name()); err != nil {
-		return fmt.Errorf("remove temp file: %w", err)
-	}
-
-	return f.File.Close()
-}
-
-func (f *File) upload() error {
-	if f.File == nil {
-		return errors.New("trying to upload without a file")
-	}
-
-	messageID, fileID, err := f.driver.tgClient.UploadFile(f.driver.chatID, f.File.Name(), f.files[0].AbsName())
-	if err != nil {
-		return fmt.Errorf("upload: %w", err)
-	}
-
-	dbFile := f.files[0]
-	dbFile.MessageID = messageID
-	dbFile.FileID = fileID
-
-	if _, err := f.driver.tgClient.TDClient.DeleteFile(fileID); err != nil {
-		return fmt.Errorf("delete file by tdclient: %w", err)
-	}
-
-	return nil
-}
-func (f *File) update() error {
-	if f.File == nil {
-		return nil
-	}
-
-	fileID, err := f.driver.tgClient.UpdateFile(f.files[0].ChatID, f.files[0].MessageID, f.File.Name(), f.files[0].AbsName())
-	if err != nil {
-		return fmt.Errorf("upload file: %w", err)
-	}
-
-	f.files[0].FileID = fileID
-
-	if _, err := f.driver.tgClient.TDClient.DeleteFile(fileID); err != nil {
-		return fmt.Errorf("delete file by tdclient: %w", err)
-	}
-
 	return nil
 }

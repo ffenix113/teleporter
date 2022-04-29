@@ -182,9 +182,7 @@ func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File
 	}
 
 	if len(dbFiles) == 0 {
-		return &File{
-			stat: dbFile,
-		}, nil
+		return &Directory{}, nil
 	}
 
 	return dbFiles.File(t, flag, perm)
@@ -380,7 +378,6 @@ func (t *Telegram) createFile(name string, flag int, perm fs.FileMode) (*File, e
 		driver: t,
 		File:   tmpFile,
 		flag:   flag,
-		stat:   dbFile,
 		files:  DBFilesInfo{dbFile},
 	}
 
