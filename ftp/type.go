@@ -42,7 +42,7 @@ type Driver struct {
 }
 
 func NewDriver(db *bun.DB, tgClient *arman92.Client, settings config.FTP, logger *zap.Logger) *Driver {
-	storageOptimizer(tgClient.TDClient, logger, settings.Optimize)
+	storageOptimizer(tgClient.TDClient, logger, settings.Optimize)()
 
 	return &Driver{
 		db:       db,
@@ -185,7 +185,7 @@ func storageOptimizer(cl *client.Client, logger *zap.Logger, conf *config.Optimi
 			case <-forceChan:
 			}
 
-			deletedStats, err := cl.OptimizeStorage(conf.MaxTotalSize, int32(conf.UnaccessedDuration.Seconds()), -1, int32(conf.Immunity.Seconds()), nil, nil, nil, true, 5)
+			deletedStats, err := cl.OptimizeStorage(conf.MaxTotalSize, int32(conf.UnaccessedDuration.Seconds()), conf.MaxFilesCount, int32(conf.Immunity.Seconds()), nil, nil, nil, true, 5)
 			if err != nil {
 				logger.Error("optimize storage", zap.Error(err))
 			}

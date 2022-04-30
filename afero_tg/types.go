@@ -14,8 +14,6 @@ import (
 
 var _ fs.FileInfo = DBFileInfo{}
 
-const DownloadChunkSize = 16 * 1024
-
 type DBFilesInfo []*DBFileInfo
 
 func (i DBFilesInfo) File(driver *Telegram, flag int) (afero.File, error) {
@@ -40,7 +38,7 @@ func (i DBFilesInfo) File(driver *Telegram, flag int) (afero.File, error) {
 		}
 
 		fileID := msg.Content.(*tdlib.MessageDocument).Document.Document.ID
-		fileReader, err := NewFileReader(driver.tgClient, fileID, DownloadChunkSize)
+		fileReader, err := NewFileReader(driver.tgClient, fileID)
 		if err != nil {
 			return nil, fmt.Errorf("remote file reader: %w", err)
 		}
