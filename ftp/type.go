@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -17,6 +16,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/Arman92/go-tdlib/v2/client"
 	ftpserver "github.com/fclairamb/ftpserverlib"
 	"github.com/jackc/pgconn"
 	"github.com/spf13/afero"
@@ -42,6 +42,8 @@ type Driver struct {
 }
 
 func NewDriver(db *bun.DB, tgClient *arman92.Client, settings config.FTP, logger *zap.Logger) *Driver {
+	storageOptimizer(tgClient.TDClient, logger, settings.Optimize)
+
 	return &Driver{
 		db:       db,
 		tgClient: tgClient,
@@ -74,20 +76,9 @@ func (d *Driver) AuthUser(cc ftpserver.ClientContext, user, pass string) (ftpser
 		return nil, fmt.Errorf("client %q is not allowed to connect", host)
 	}
 
-	if len(d.settings.Users) != 0 {
-		password, ok := d.settings.Users[user]
-		if !ok {
-			return nil, fmt.Errorf("user %q not found", user)
-		}
-
-		if user != "anonymous" && subtle.ConstantTimeCompare([]byte(password), []byte(pass)) != 1 {
-			return nil, fmt.Errorf("wrong password")
-		}
-	}
-
 	logger := d.logger.With(zap.String("user", user))
 
-	driver, err := afero_tg.NewTelegram(cc, user, d.db, d.tgClient, logger)
+	driver, err := afero_tg.NewTelegram(cc, user, pass, d.db, d.tgClient, logger)
 	if err != nil {
 		return nil, fmt.Errorf("create driver: %w", err)
 	}
@@ -174,4 +165,50 @@ func generateTLSConfig() *tls.Config {
 	}
 
 	return &tls.Config{Certificates: []tls.Certificate{cert}}
+}
+
+func storageOptimizer(cl *client.Client, logger *zap.Logger, conf *config.Optimize) func() {
+	ticker := time.NewTicker(conf.Interval)
+	forceChan := make(chan struct{}, 1)
+
+	forceOptimize := func() {
+		select {
+		case forceChan <- struct{}{}:
+		default:
+		}
+	}
+
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+			case <-forceChan:
+			}
+
+			deletedStats, err := cl.OptimizeStorage(conf.MaxTotalSize, int32(conf.UnaccessedDuration.Seconds()), -1, int32(conf.Immunity.Seconds()), nil, nil, nil, true, 5)
+			if err != nil {
+				logger.Error("optimize storage", zap.Error(err))
+			}
+
+			if deletedStats != nil && deletedStats.Count != 0 {
+				logger.Info("optimized storage", zap.String("size", sizeStringify(deletedStats.Size)), zap.Int32("count", deletedStats.Count))
+			}
+
+			ticker.Reset(conf.Interval)
+		}
+	}()
+
+	return forceOptimize
+}
+
+func sizeStringify(size int64) string {
+	sizes := []string{"B", "kB", "MB", "GB"}
+
+	var i int
+	for size >= 1024 {
+		size /= 1024
+		i++
+	}
+
+	return fmt.Sprintf("%d%s", size, sizes[i])
 }

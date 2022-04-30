@@ -17,12 +17,21 @@ import (
 	"github.com/spf13/afero"
 	"github.com/uptrace/bun"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ffenix113/teleporter/config"
 	"github.com/ffenix113/teleporter/manager/arman92"
 )
 
 var _ afero.Fs = (*Telegram)(nil)
+
+type User struct {
+	bun.BaseModel `bun:"table:users"`
+	ID            string
+	Password      sql.NullString
+	ChatName      sql.NullString
+	ChatID        sql.NullInt64
+}
 
 type Telegram struct {
 	cc ftpserver.ClientContext
@@ -41,15 +50,15 @@ func NewID() string {
 	return uuid.New().String()
 }
 
-func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgClient *arman92.Client, logger *zap.Logger) (*Telegram, error) {
-	var chatName sql.NullString
-	var chatID sql.NullInt64
-	if err := client.QueryRow("select chat_name, chat_id from users where id = ?", userID).Scan(&chatName, &chatID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("user %q not found in db", userID)
-		}
+func NewTelegram(cc ftpserver.ClientContext, userID, password string, client *bun.DB, tgClient *arman92.Client, logger *zap.Logger) (*Telegram, error) {
+	var user User
+	if err := client.NewSelect().Model(&user).Where("id = ?", userID).
+		Scan(context.Background()); err != nil {
+		return nil, fmt.Errorf("query user: %w", err)
+	}
 
-		return nil, fmt.Errorf("fetch chat name or id: %w", err)
+	if user.Password.Valid && bcrypt.CompareHashAndPassword([]byte(user.Password.String), []byte(password)) != nil {
+		return nil, errors.New("invalid password")
 	}
 
 	tg := &Telegram{
@@ -62,7 +71,7 @@ func NewTelegram(cc ftpserver.ClientContext, userID string, client *bun.DB, tgCl
 	}
 
 	if tgClient != nil {
-		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: chatName.String, ChatID: chatID.Int64})
+		chat, err := tgClient.FindChat(context.Background(), config.Telegram{ChatName: user.ChatName.String, ChatID: user.ChatID.Int64})
 		if err != nil {
 			return nil, fmt.Errorf("find chat: %w", err)
 		}
@@ -158,11 +167,9 @@ func (t *Telegram) Open(name string) (afero.File, error) {
 }
 
 func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	t.logger.Debug("open file", zap.Strings("flag", flagBits(flag)))
-
 	dbFile, err := t.fetchItemInfo(context.Background(), name)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE != 0 {
+		if errors.Is(err, fs.ErrNotExist) && flag&os.O_CREATE == os.O_CREATE {
 			newFile, err := t.createFile(name, flag, perm)
 			if err != nil {
 				return nil, fmt.Errorf("create new file: %w", err)
@@ -183,11 +190,7 @@ func (t *Telegram) OpenFile(name string, flag int, perm os.FileMode) (afero.File
 		return nil, err
 	}
 
-	if len(dbFiles) == 0 {
-		return &Directory{}, nil
-	}
-
-	return dbFiles.File(t, flag)
+	return &Directory{stat: dbFile, files: dbFiles}, nil
 }
 
 func (t *Telegram) Remove(name string) error {

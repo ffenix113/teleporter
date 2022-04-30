@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"time"
 
 	"github.com/Arman92/go-tdlib/v2/client"
 	ftpserver "github.com/fclairamb/ftpserverlib"
@@ -20,7 +21,6 @@ type Config struct {
 
 // App holds Telegram config
 type App struct {
-	Dev          bool
 	FilesPath    string
 	TempPath     string
 	WebListen    string
@@ -33,10 +33,22 @@ type DB struct {
 
 type FTP struct {
 	*ftpserver.Settings `yaml:",inline"`
-	Users               map[string]string
+	Optimize            *Optimize
 	Debug               bool
 	IPWhitelist         []string
 	IPWhitelistMap      map[string]struct{} `yaml:"-"`
+}
+
+type Optimize struct {
+	MaxTotalSize  int64
+	MaxFilesCount int32
+	// UnaccessedDuration specifies how long file should be unaccessed
+	// before it can be deleted.
+	UnaccessedDuration time.Duration
+	// Immunity specifies time after file creation
+	// after which file can be deleted.
+	Immunity time.Duration
+	Interval time.Duration
 }
 
 type Telegram struct {
@@ -77,6 +89,13 @@ func Load(configPaths ...string) (c Config) {
 					Start: 40000,
 					End:   40100,
 				},
+			},
+			Optimize: &Optimize{
+				MaxTotalSize:       4 * 1024 * 1024 * 1024, // 4GB
+				MaxFilesCount:      512,
+				UnaccessedDuration: 4 * time.Hour,
+				Immunity:           15 * time.Minute,
+				Interval:           30 * time.Minute,
 			},
 		},
 	}

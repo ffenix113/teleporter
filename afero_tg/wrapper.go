@@ -47,7 +47,7 @@ func (w Wrapper) Open(name string) (afero.File, error) {
 }
 
 func (w Wrapper) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	w.logger.Debug("openfile", zap.String("name", name), zap.Int("flag", flag), zap.String("perm", perm.String()))
+	w.logger.Debug("openfile", zap.String("name", name), zap.Strings("flag", flagBits(flag)), zap.String("perm", perm.String()))
 
 	return w.fs.OpenFile(name, flag, perm)
 }

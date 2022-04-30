@@ -14,6 +14,7 @@ require (
 	github.com/uptrace/bun v1.1.4
 	github.com/uptrace/bun/dialect/pgdialect v1.1.4
 	go.uber.org/zap v1.21.0
+	golang.org/x/crypto v0.0.0-20211108221036-ceb1ce70b4fa
 	golang.org/x/exp v0.0.0-20220328175248-053ad81199eb
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
@@ -33,7 +34,6 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20211108221036-ceb1ce70b4fa // indirect
 	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
 	golang.org/x/text v0.3.7 // indirect
 )

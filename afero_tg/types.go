@@ -1,7 +1,6 @@
 package afero_tg
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,7 +22,7 @@ func (i DBFilesInfo) File(driver *Telegram, flag int) (afero.File, error) {
 	if len(i) == 1 && !i[0].IsDir() {
 		fl := i[0]
 
-		if err := driver.tgClient.EnsureMessagesAreKnown(context.Background(), fl.ChatID, fl.MessageID); err != nil {
+		if err := driver.tgClient.EnsureMessagesAreKnown(fl.ChatID, fl.MessageID); err != nil {
 			return nil, fmt.Errorf("failed to ensure message is known: %w", err)
 		}
 
@@ -40,12 +39,16 @@ func (i DBFilesInfo) File(driver *Telegram, flag int) (afero.File, error) {
 			return nil, fmt.Errorf("failed to get message: %w", err)
 		}
 
-		remoteReader := NewRemoteFileReader(driver.tgClient, msg.Content.(*tdlib.MessageDocument).Document.Document.ID, DownloadChunkSize)
+		fileID := msg.Content.(*tdlib.MessageDocument).Document.Document.ID
+		fileReader, err := NewFileReader(driver.tgClient, fileID, DownloadChunkSize)
+		if err != nil {
+			return nil, fmt.Errorf("remote file reader: %w", err)
+		}
 
 		return &File{
 			driver: driver,
 			flag:   flag,
-			File:   remoteReader,
+			File:   fileReader,
 			files:  i,
 		}, nil
 	}

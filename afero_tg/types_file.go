@@ -61,9 +61,9 @@ func (f *File) Close() error {
 		return nil
 	}
 
-	stat, _ := f.File.Stat()
-	dbFile := f.files[0]
-	dbFile.SizeField = stat.Size()
+	if f.flag == os.O_RDONLY {
+		return nil
+	}
 
 	if f.flag&os.O_CREATE == os.O_CREATE {
 		if err := f.upload(); err != nil {
@@ -73,7 +73,7 @@ func (f *File) Close() error {
 		if err := f.driver.insertFile(context.Background(), f); err != nil {
 			return fmt.Errorf("insert file: %w", err)
 		}
-	} else if f.flag&os.O_WRONLY == os.O_WRONLY || f.flag&os.O_RDWR == os.O_RDWR {
+	} else if f.flag&os.O_WRONLY == os.O_WRONLY || f.flag&os.O_RDWR == os.O_RDWR || f.flag&os.O_APPEND == os.O_APPEND {
 		stat, _ := f.File.Stat()
 		if stat.ModTime().After(f.modifiedAt) {
 			if err := f.update(); err != nil {
@@ -84,10 +84,6 @@ func (f *File) Close() error {
 				return fmt.Errorf("insert file: %w", err)
 			}
 		}
-	}
-
-	if err := os.Remove(f.File.Name()); err != nil {
-		return fmt.Errorf("remove temp file: %w", err)
 	}
 
 	return f.File.Close()
@@ -103,13 +99,12 @@ func (f *File) upload() error {
 		return fmt.Errorf("upload: %w", err)
 	}
 
+	stat, _ := f.File.Stat()
+
 	dbFile := f.files[0]
+	dbFile.SizeField = stat.Size()
 	dbFile.MessageID = messageID
 	dbFile.FileID = fileID
-
-	if _, err := f.driver.tgClient.TDClient.DeleteFile(fileID); err != nil {
-		return fmt.Errorf("delete file by tdclient: %w", err)
-	}
 
 	return nil
 }
@@ -124,10 +119,6 @@ func (f *File) update() error {
 	}
 
 	f.files[0].FileID = fileID
-
-	if _, err := f.driver.tgClient.TDClient.DeleteFile(fileID); err != nil {
-		return fmt.Errorf("delete file by tdclient: %w", err)
-	}
 
 	return nil
 }

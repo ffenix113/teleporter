@@ -21,61 +21,61 @@ type Directory struct {
 	readDirNamesN int
 }
 
-func (f *Directory) Size() int64 {
-	return f.stat.Size()
+func (d *Directory) Size() int64 {
+	return d.stat.Size()
 }
 
-func (f *Directory) Mode() fs.FileMode {
-	return f.stat.Mode()
+func (d *Directory) Mode() fs.FileMode {
+	return d.stat.Mode()
 }
 
-func (f *Directory) ModTime() time.Time {
-	return f.stat.ModTime()
+func (d *Directory) ModTime() time.Time {
+	return d.stat.ModTime()
 }
 
-func (f *Directory) IsDir() bool {
+func (d *Directory) IsDir() bool {
 	return true
 }
 
-func (f *Directory) Sys() any {
-	return f.stat.Sys()
+func (d *Directory) Sys() any {
+	return d.stat.Sys()
 }
 
-func (f *Directory) Name() string {
-	return f.name
+func (d *Directory) Name() string {
+	return d.name
 }
 
-func (f *Directory) Stat() (fs.FileInfo, error) {
-	return f.stat, nil
+func (d *Directory) Stat() (fs.FileInfo, error) {
+	return d.stat, nil
 }
 
-func (f *Directory) Readdir(count int) ([]os.FileInfo, error) {
+func (d *Directory) Readdir(count int) ([]os.FileInfo, error) {
 	if count == -1 {
-		count = len(f.files)
+		count = len(d.files)
 	}
-	if count > len(f.files)-f.readDirN {
-		count = len(f.files) - f.readDirN
+	if count > len(d.files)-d.readDirN {
+		count = len(d.files) - d.readDirN
 	}
 	if count < 0 {
 		return nil, nil
 	}
 
 	var files []os.FileInfo
-	for _, file := range f.files[f.readDirN : f.readDirN+count] {
+	for _, file := range d.files[d.readDirN : d.readDirN+count] {
 		files = append(files, file)
 	}
 
-	f.readDirN += count
+	d.readDirN += count
 
 	return files, nil
 }
 
-func (f *Directory) Readdirnames(n int) ([]string, error) {
+func (d *Directory) Readdirnames(n int) ([]string, error) {
 	if n == -1 {
-		n = len(f.files)
+		n = len(d.files)
 	}
-	if n > len(f.files)-f.readDirNamesN {
-		n = len(f.files) - f.readDirNamesN
+	if n > len(d.files)-d.readDirNamesN {
+		n = len(d.files) - d.readDirNamesN
 	}
 	if n < 0 {
 		return nil, nil
@@ -83,13 +83,13 @@ func (f *Directory) Readdirnames(n int) ([]string, error) {
 
 	var dirNames []string
 
-	for _, file := range f.files[f.readDirNamesN : f.readDirNamesN+n] {
+	for _, file := range d.files[d.readDirNamesN : d.readDirNamesN+n] {
 		if file.IsDirField {
 			dirNames = append(dirNames, file.NameField)
 		}
 	}
 
-	f.readDirNamesN += n
+	d.readDirNamesN += n
 
 	return dirNames, nil
 }

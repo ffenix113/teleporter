@@ -39,8 +39,8 @@ func (c *Client) FindChat(ctx context.Context, tConf config.Telegram) (*tdlib.Ch
 	return chat, nil
 }
 
-func (c *Client) EnsureMessagesAreKnown(ctx context.Context, chatID int64, firstID int64, ids ...int64) error {
-	ids = append(ids, firstID)
+func (c *Client) EnsureMessagesAreKnown(chatID int64, firstMsgID int64, ids ...int64) error {
+	ids = append(ids, firstMsgID)
 	for _, msgId := range ids {
 		_, err := c.TDClient.GetChatHistory(chatID, msgId, 0, 1, true)
 		if err != nil {
