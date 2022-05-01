@@ -48,19 +48,7 @@ func (f *File) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 }
 
-func (f *File) Readdir(_ int) ([]os.FileInfo, error) {
-	return nil, nil
-}
-
-func (f *File) Readdirnames(_ int) ([]string, error) {
-	return nil, nil
-}
-
 func (f *File) Close() error {
-	if f.File == nil {
-		return nil
-	}
-
 	if f.flag == os.O_RDONLY {
 		return nil
 	}

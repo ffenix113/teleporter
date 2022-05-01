@@ -1,12 +1,14 @@
 package ftp
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Arman92/go-tdlib/v2/client"
+	"github.com/Arman92/go-tdlib/v2/tdlib"
 	ftpserver "github.com/fclairamb/ftpserverlib"
 	"github.com/jackc/pgconn"
 	"github.com/spf13/afero"
@@ -43,6 +46,8 @@ type Driver struct {
 
 func NewDriver(db *bun.DB, tgClient *arman92.Client, settings config.FTP, logger *zap.Logger) *Driver {
 	storageOptimizer(tgClient.TDClient, logger, settings.Optimize)()
+
+	tgClient.AddUpdateHandler(UpdateDeletedMessages(db, logger))
 
 	return &Driver{
 		db:       db,
@@ -165,6 +170,49 @@ func generateTLSConfig() *tls.Config {
 	}
 
 	return &tls.Config{Certificates: []tls.Certificate{cert}}
+}
+
+func UpdateDeletedMessages(db *bun.DB, logger *zap.Logger) arman92.UpdateHandler {
+	return func(update tdlib.UpdateMsg) bool {
+		if update.Data["@type"].(string) != string(tdlib.ChatEventMessageDeletedType) {
+			return false
+		}
+
+		var upd tdlib.ChatEventMessageDeleted
+		json.Unmarshal(update.Raw, &upd)
+
+		exists, err := db.NewSelect().Model((*afero_tg.User)(nil)).
+			Where("chat_id = ?", upd.Message.ChatID).
+			Exists(context.Background())
+		if err != nil {
+			logger.Error("select user on deleted message", zap.Error(err))
+			return false
+		}
+
+		if !exists {
+			return false
+		}
+
+		res, err := db.NewDelete().Model((*afero_tg.DBFileInfo)(nil)).
+			Where("chat_id = ? AND message_id = ?", upd.Message.ChatID, upd.Message.ID).
+			Exec(context.Background())
+		if err != nil {
+			logger.Error("delete file info on deleted message", zap.Error(err))
+			return false
+		}
+
+		affected, err := res.RowsAffected()
+		if err != nil {
+			logger.Error("get affected rows on deleted message", zap.Error(err))
+			return false
+		}
+
+		if affected == 0 {
+			logger.Warn("no rows affected on deleted message", zap.Int64("chat_id", upd.Message.ChatID), zap.Int64("message_id", upd.Message.ID))
+		}
+
+		return false
+	}
 }
 
 func storageOptimizer(cl *client.Client, logger *zap.Logger, conf *config.Optimize) func() {

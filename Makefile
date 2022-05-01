@@ -7,29 +7,28 @@ GOOS = linux
 GOARCH = amd64
 
 CGO_LDFLAGS += -lcrypto
-CGO_LDFLAGS += -L/usr/lib/aarch64-linux-gnu
+CGO_LDFLAGS += -L/usr/lib/x86_64-linux-gnu
 CGO_LDFLAGS += -L$(PWD)/td/build
-#CGO_LDFLAGS += -L$(PWD)/td/build/tddb
-#CGO_LDFLAGS += -L$(PWD)/td/build/tdactor
-#CGO_LDFLAGS += -L$(PWD)/td/build/sqlite
-#CGO_LDFLAGS += -L$(PWD)/td/build/tdnet
-#CGO_LDFLAGS += -L$(PWD)/td/build/tdutils
 CGO_LDFLAGS += -L$(PWD)/td/tdlib/lib
+CGO_LDFLAGS += -stdlib=libc++
 CGO_CFLAGS += -I$(PWD)/td/tdlib/include
 
 # Can be a commit as well.
 TDLIB_VERSION = v1.8.0
 
-CLANG_VERSION = 11
+CLANG_VERSION = 14
 CLANG = /usr/bin/clang-$(CLANG_VERSION)
 CLANG_PP = /usr/bin/clang++-$(CLANG_VERSION)
 
 build: $(CLANG_PP)
-	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS) -stdlib=libc++" CC=$(CLANG) go build main.go
+	CGO_CFLAGS="$(CGO_CFLAGS)" CGO_LDFLAGS="$(CGO_LDFLAGS)" CC=$(CLANG) go build main.go
 
 build-docker:
 	test ! "X$(VERSION)" = "X"  || ( echo "VERSION is not defined" && exit 1 )
 	docker buildx build --platform linux/arm64 -t flayer/teleporter:$(VERSION) -f Dockerfile --push .
+
+.PHONY: clang
+clang: $(CLANG_PP)
 
 $(CLANG_PP):
 	apt-get update

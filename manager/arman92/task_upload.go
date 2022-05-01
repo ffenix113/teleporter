@@ -99,11 +99,12 @@ func (f *UploadFile) watchUpload() <-chan struct{} {
 			return false
 		}
 
-		if updateState.File.Remote.IsUploadingCompleted {
+		uploadingStopped := updateState.File.Remote.IsUploadingCompleted || !updateState.File.Remote.IsUploadingActive
+		if uploadingStopped {
 			close(updChn)
 		}
 
-		return updateState.File.Remote.IsUploadingCompleted
+		return uploadingStopped
 	})
 
 	return updChn

@@ -358,7 +358,7 @@ func (t *Telegram) dirHasItems(ctx context.Context, name string) (bool, error) {
 	return exists, nil
 }
 
-func (t *Telegram) createFile(name string, flag int, perm fs.FileMode) (*File, error) {
+func (t *Telegram) createFile(name string, flag int, perm fs.FileMode) (afero.File, error) {
 	fileDir, fileName := filepath.Split(name)
 	now := time.Now()
 
